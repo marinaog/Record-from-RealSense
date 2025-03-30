@@ -6,6 +6,7 @@ import datetime
 import time
 import keyboard
 import matplotlib.pyplot as plt
+from pidng.core import RPICAM2DNG, BaseCameraModel, DNGTags, Tag
 
 # For metadata in json files  ->  sRGB-to-XYZ color spaces conversion matrix
 _RGB2XYZ = np.array([
@@ -51,7 +52,7 @@ def find_devices():
 def create_directories():
     """Creates a timestamped directory structure for storing data."""
     timestamp = datetime.datetime.now().strftime("%m.%d-%H.%M")
-    base_folder = f"recordings/{timestamp}"
+    base_folder = f"Record/recordings/{timestamp}"
 
     depth_folder = os.path.join(base_folder, "depth")
     raw_folder = os.path.join(base_folder, "raw")
@@ -63,6 +64,23 @@ def create_directories():
 
     return base_folder, depth_folder, raw_folder, imu_folder
 
+class D435CameraModel(BaseCameraModel):
+    def __init__(self):
+        super().__init__()
+        # You would define the specific camera tags and format here
+        self.fmt = {"size": (1920, 1080), "stride": 1920, "bpp": 16, "format": "raw16"}  # example values
+        self.tags = self.create_tags()  # Create or assign your tags here
+
+    def create_tags(self):
+        # Dummy implementation - populate with actual D435 tags
+        tags = DNGTags()
+        tags.set(Tag.ImageWidth, 1920)
+        tags.set(Tag.ImageLength, 1080)
+        tags.set(Tag.BitsPerSample, 16)
+        tags.set(Tag.Compression, 1)   
+        tags.set(Tag.Software, "RealSense D435")
+        return tags
+    
 def main():
     # Identify devices
     d435_serial, l515_serial = find_devices()
@@ -141,13 +159,18 @@ def main():
 
             np.save(os.path.join(imu_folder + f"/{frame_count}.npy"), np.array(imu_data))
 
-            # Depth and raw image
+            # Depth 
             depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
+            depth_image.tofile(depth_folder + f"/{frame_count}.raw")
+
+            # Raw images
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
-            
-            depth_image.tofile(depth_folder + f"/{frame_count}.raw")
-            raw_image.tofile(raw_folder + f"/{frame_count}.dng")
+            camera_model = D435CameraModel()
+            dng = RPICAM2DNG(camera_model)
+            dng.options(path=raw_folder, compress=False)
+            print(raw_folder)
+            dng.convert(raw_image, filename=f"{frame_count}.dng")
             
             plt.imshow(raw_image, cmap='gray')
             plt.title("Live Raw Data")
