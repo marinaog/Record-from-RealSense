@@ -119,6 +119,7 @@ class D435CameraModel(BaseCameraModel):
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--two_devices", default=False, type=bool)
+    parser.add_argument("--show", default=False, type=bool)
     
     args = parser.parse_args()
     
@@ -155,8 +156,9 @@ def main():
         config_A.enable_stream(rs.stream.accel)
 
     # Show RAW data
-    plt.ion()
-    fig = plt.figure()
+    if args.show:
+        plt.ion()
+        fig = plt.figure()
 
     try:
         if args.two_devices:
@@ -179,7 +181,7 @@ def main():
             if keyboard.is_pressed('q'):
                 break
 
-            if plt.fignum_exists(fig.number) == False:
+            if args.show and plt.fignum_exists(fig.number) == False:
                 break
 
             # Receive data from devices
@@ -229,10 +231,11 @@ def main():
             dng.options(path=raw_folder, compress=False)
             dng.convert(raw_image, filename=f"{frame_count}.dng")
             
-            plt.imshow(raw_image, cmap='gray')
-            plt.title("Live Raw Data")
-            plt.draw()
-            plt.pause(0.01)
+            if args.show:
+                plt.imshow(raw_image, cmap='gray')
+                plt.title("Live Raw Data")
+                plt.draw()
+                plt.pause(0.01)
 
             # Metadata
             exposure_us = raw_frame.get_frame_metadata(rs.frame_metadata_value.actual_exposure) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.actual_exposure) else None
@@ -302,9 +305,11 @@ def main():
         pipeline_A.stop()
         if args.two_devices:
             pipeline_B.stop()     
-        plt.ioff()   
-        if plt.fignum_exists(fig.number):
-            plt.close(fig)
+
+        if args.show:
+            plt.ioff()   
+            if plt.fignum_exists(fig.number):
+                plt.close(fig)
         print("🔄 Recording stopped.")
 
 if __name__ == "__main__":
