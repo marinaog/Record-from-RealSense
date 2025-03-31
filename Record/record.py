@@ -7,6 +7,7 @@ import time
 import keyboard
 import matplotlib.pyplot as plt
 from pidng.core import RPICAM2DNG, BaseCameraModel, DNGTags, Tag
+from argparse import ArgumentParser
 
 # For metadata in json files  ->  sRGB-to-XYZ color spaces conversion matrix
 _RGB2XYZ = np.array([
@@ -15,39 +16,73 @@ _RGB2XYZ = np.array([
     [0.0193339, 0.1191920, 0.9503041]
 ])
 
-def find_devices():
-    """Finds and assigns D435 as device A and L515 as device B."""
-    ctx = rs.context()
-    devices = ctx.query_devices()
+def find_devices(two_devices):
+    if two_devices:
+        """Finds and assigns D435 as device A and L515 as device B."""
+        ctx = rs.context()
+        devices = ctx.query_devices()
 
-    d435 = None
-    l515 = None
+        d435 = None
+        l515 = None
 
-    for dev in devices:
-        name = dev.get_info(rs.camera_info.name)
-        serial = dev.get_info(rs.camera_info.serial_number)
+        for dev in devices:
+            name = dev.get_info(rs.camera_info.name)
+            serial = dev.get_info(rs.camera_info.serial_number)
 
-        if "D435" in name:
-            d435 = serial
-        elif "L515" in name:
-            l515 = serial
+            if "D435" in name:
+                d435 = serial
+            elif "L515" in name:
+                l515 = serial
 
-    not_connected = []
-    if not d435:
-        not_connected.append("d435")
+        not_connected = []
+        if not d435:
+            not_connected.append("d435")
+        else:
+            print(f"✅ D435 (Device A): {d435}")
+        if not l515:
+            not_connected.append("l515")
+        else:
+            print(f"✅ L515 (Device B): {l515}")
+            
+        if len(not_connected) > 0:
+            for device in not_connected:
+                print(f"❌ {device} not connected.")
+                print(f"Devices connected:")
+                for dev in devices:
+                    print(dev.get_info(rs.camera_info.name))
+            exit()
+
+        return d435, l515
     else:
-        print(f"✅ D435 (Device A): {d435}")
-    if not l515:
-        not_connected.append("l515")
-    else:
-       print(f"✅ L515 (Device B): {l515}")
-        
-    if len(not_connected) > 0:
-        for device in not_connected:
-            print(f"❌ {device} not connected.")
-        exit()
+        """Finds and assigns D435i as the only device."""
+        ctx = rs.context()
+        devices = ctx.query_devices()
 
-    return d435, l515
+        d435i = None
+
+        for dev in devices:
+            name = dev.get_info(rs.camera_info.name)
+            serial = dev.get_info(rs.camera_info.serial_number)
+
+            if "D435I" in name:
+                d435i = serial
+
+        not_connected = []
+        if not d435i:
+            not_connected.append("d435i")
+        else:
+            print(f"✅ D435i: {d435i}")
+            
+        if len(not_connected) > 0:
+            for device in not_connected:
+                print(f"❌ {device} not connected.")
+                print(f"Devices connected:")
+                for dev in devices:
+                    print(dev.get_info(rs.camera_info.name))
+            exit()
+
+        return d435i
+    
 
 def create_directories():
     """Creates a timestamped directory structure for storing data."""
@@ -82,40 +117,58 @@ class D435CameraModel(BaseCameraModel):
         return tags
     
 def main():
+    parser = ArgumentParser(description="Recording data from intel RealSense devices")
+    parser.add_argument("--two_devices", default=False, type=bool)
+    
+    args = parser.parse_args()
+    
     # Identify devices
-    d435_serial, l515_serial = find_devices()
+    if args.two_devices:
+        d435_serial, l515_serial = find_devices(args.two_devices)
+    else:
+        d435_serial = find_devices(args.two_devices)
     
     # Create directories
     base_folder, depth_folder, raw_folder, imu_folder = create_directories()
 
-    # Create pipelines
+    # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
-    pipeline_B = rs.pipeline()
-    
     config_A = rs.config()
-    config_B = rs.config()
 
-    # Configure D435 (Device A) - Depth + RAW
+    # Configure D435 or D435i (Device A) - Depth + RAW
     config_A.enable_device(d435_serial)
     config_A.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
     config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)  
 
-    # Configure L515 (Device B) - IMU
-    config_B.enable_device(l515_serial)
-    config_B.enable_stream(rs.stream.gyro)
-    config_B.enable_stream(rs.stream.accel)
+    if args.two_devices:
+        # Create pipeline for L515 (Device B)
+        pipeline_B = rs.pipeline()
+        config_B = rs.config()
+
+        # Configure L515 (Device B) - IMU
+        config_B.enable_device(l515_serial)
+        config_B.enable_stream(rs.stream.gyro)
+        config_B.enable_stream(rs.stream.accel)
+    else:
+        # Configure D435i (Device A) - IMU
+        config_A.enable_stream(rs.stream.gyro)
+        config_A.enable_stream(rs.stream.accel)
 
     # Show RAW data
     plt.ion()
     fig = plt.figure()
 
     try:
-        print("⏳ Starting D435...")
-        pipeline_A.start(config_A)
-        time.sleep(1)  # Delay to avoid conflicts
+        if args.two_devices:
+            print("⏳ Starting D435...")
+            pipeline_A.start(config_A)
+            time.sleep(1)  # Delay to avoid conflicts
 
-        print("⏳ Starting L515...")
-        pipeline_B.start(config_B)
+            print("⏳ Starting L515...")
+            pipeline_B.start(config_B)
+        else:
+            print("⏳ Starting D435i...")
+            pipeline_A.start(config_A)
 
         print(f"✅ Recording started! Data will be saved in: {base_folder}")
         print("Press 'q' to stop.")
@@ -129,16 +182,21 @@ def main():
             if plt.fignum_exists(fig.number) == False:
                 break
 
-            # Receive data from both devices
+            # Receive data from devices
             frames_A = pipeline_A.wait_for_frames()
-            frames_B = pipeline_B.wait_for_frames()
 
             depth_frame = frames_A.get_depth_frame()
             raw_frame = frames_A.get_color_frame()
-            
-            # imu data            
-            accel_frame = frames_B.first_or_default(rs.stream.accel)
-            gyro_frame = frames_B.first_or_default(rs.stream.gyro)
+
+            if args.two_devices:           
+                frames_B = pipeline_B.wait_for_frames()
+                # imu data            
+                accel_frame = frames_B.first_or_default(rs.stream.accel)
+                gyro_frame = frames_B.first_or_default(rs.stream.gyro)
+            else: 
+                accel_frame = frames_A.first_or_default(rs.stream.accel)
+                gyro_frame = frames_A.first_or_default(rs.stream.gyro)
+
 
             if not accel_frame or not gyro_frame or not depth_frame or not raw_frame:
                 print("Error")
@@ -150,10 +208,10 @@ def main():
             gyro_data = gyro_frame.as_motion_frame().get_motion_data()
             imu_data = [dt, accel_data.x, accel_data.y, accel_data.z, gyro_data.x, gyro_data.y, gyro_data.z]
 
-            # if frame_count > 0:
-            #     print("dt",dt, time_of_arrival, previous_time_of_arrival)
-            # else:
-            #     print("dt",dt, time_of_arrival)
+            if frame_count > 0:
+                print("frame count", frame_count,"dt",dt, time_of_arrival, previous_time_of_arrival)
+            else:
+                print("frame count", frame_count,"dt",dt, time_of_arrival)
 
             previous_time_of_arrival = time_of_arrival
 
@@ -169,7 +227,6 @@ def main():
             camera_model = D435CameraModel()
             dng = RPICAM2DNG(camera_model)
             dng.options(path=raw_folder, compress=False)
-            print(raw_folder)
             dng.convert(raw_image, filename=f"{frame_count}.dng")
             
             plt.imshow(raw_image, cmap='gray')
@@ -243,7 +300,8 @@ def main():
     finally:
         print("🔄 Stopping pipelines...")
         pipeline_A.stop()
-        pipeline_B.stop()     
+        if args.two_devices:
+            pipeline_B.stop()     
         plt.ioff()   
         if plt.fignum_exists(fig.number):
             plt.close(fig)
