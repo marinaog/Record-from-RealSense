@@ -8,13 +8,9 @@ import keyboard
 import matplotlib.pyplot as plt
 from pidng.core import RPICAM2DNG, BaseCameraModel, DNGTags, Tag
 from argparse import ArgumentParser
+import rawpy
+import imageio
 
-# For metadata in json files  ->  sRGB-to-XYZ color spaces conversion matrix
-_RGB2XYZ = np.array([
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041]
-])
 
 def find_devices(two_devices):
     if two_devices:
@@ -92,12 +88,14 @@ def create_directories():
     depth_folder = os.path.join(base_folder, "depth")
     raw_folder = os.path.join(base_folder, "raw")
     imu_folder = os.path.join(base_folder, "imu")
+    image_folder = os.path.join(base_folder, "images")
 
     os.makedirs(depth_folder, exist_ok=True)
     os.makedirs(raw_folder, exist_ok=True)
     os.makedirs(imu_folder, exist_ok=True)
+    os.makedirs(image_folder, exist_ok=True)
 
-    return base_folder, depth_folder, raw_folder, imu_folder
+    return base_folder, depth_folder, raw_folder, imu_folder, image_folder
 
 class D435CameraModel(BaseCameraModel):
     def __init__(self):
@@ -116,6 +114,42 @@ class D435CameraModel(BaseCameraModel):
         tags.set(Tag.Software, "RealSense D435")
         return tags
     
+def extract_metadata(dng_path, json_path, image_folder, file_name):
+    try:
+        # Open JSON file
+        with open(json_path, "r") as json_file:
+            metadata = json.load(json_file) 
+
+        # Extract DNG metadata
+        with rawpy.imread(dng_path) as raw:
+            # print(dir(raw))
+            metadata.update({
+                "BlackLevel": min(raw.black_level_per_channel),
+                "WhiteLevel": raw.white_level,
+                "cam2rg": raw.color_matrix.tolist()
+            })
+
+            
+            # Post-process RAW image and save as PNG
+            processed_image = raw.postprocess()
+            img_path = os.path.join(image_folder, file_name.replace('.json', '.png'))
+            imageio.imwrite(img_path, processed_image)
+
+        # Save updated metadata
+        with open(json_path, "w") as json_file:
+            json.dump(metadata, json_file, indent=4)
+
+        print(f"▫️ Metadata and images extracted for {file_name}")
+
+    except json.JSONDecodeError:
+        print(f"❌ Error: {json_path} is empty or corrupt.")
+    except rawpy.LibRawFileUnsupportedError:
+        print(f"❌ Error: {dng_path} is not a valid RAW file.")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+
+    
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--two_devices", default=False, type=bool)
@@ -130,7 +164,7 @@ def main():
         d435_serial = find_devices(args.two_devices)
     
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder = create_directories()
+    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories()
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -190,32 +224,26 @@ def main():
             depth_frame = frames_A.get_depth_frame()
             raw_frame = frames_A.get_color_frame()
 
+            # IMU with fps
             if args.two_devices:           
-                frames_B = pipeline_B.wait_for_frames()
-                # imu data            
+                frames_B = pipeline_B.wait_for_frames()        
                 accel_frame = frames_B.first_or_default(rs.stream.accel)
                 gyro_frame = frames_B.first_or_default(rs.stream.gyro)
             else: 
                 accel_frame = frames_A.first_or_default(rs.stream.accel)
                 gyro_frame = frames_A.first_or_default(rs.stream.gyro)
 
-
-            if not accel_frame or not gyro_frame or not depth_frame or not raw_frame:
-                print("Error")
-                break
-
             time_of_arrival = raw_frame.get_frame_metadata(rs.frame_metadata_value.time_of_arrival)
             dt = time_of_arrival - previous_time_of_arrival if frame_count > 0 else 0
-            accel_data = accel_frame.as_motion_frame().get_motion_data()
-            gyro_data = gyro_frame.as_motion_frame().get_motion_data()
-            imu_data = [dt, accel_data.x, accel_data.y, accel_data.z, gyro_data.x, gyro_data.y, gyro_data.z]
-
             if frame_count > 0:
                 print("frame count", frame_count,"dt",dt, time_of_arrival, previous_time_of_arrival)
             else:
                 print("frame count", frame_count,"dt",dt, time_of_arrival)
-
             previous_time_of_arrival = time_of_arrival
+
+            accel_data = accel_frame.as_motion_frame().get_motion_data()
+            gyro_data = gyro_frame.as_motion_frame().get_motion_data()
+            imu_data = [dt, accel_data.x, accel_data.y, accel_data.z, gyro_data.x, gyro_data.y, gyro_data.z]
 
             np.save(os.path.join(imu_folder + f"/{frame_count}.npy"), np.array(imu_data))
 
@@ -226,6 +254,7 @@ def main():
             # Raw images
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
+            raw_image.tofile(raw_folder + f"/{frame_count}meta.dng")
             camera_model = D435CameraModel()
             dng = RPICAM2DNG(camera_model)
             dng.options(path=raw_folder, compress=False)
@@ -238,64 +267,26 @@ def main():
                 plt.pause(0.01)
 
             # Metadata
-            exposure_us = raw_frame.get_frame_metadata(rs.frame_metadata_value.actual_exposure) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.actual_exposure) else None
-            gain = (raw_frame.get_frame_metadata(rs.frame_metadata_value.gain_level)
-                    if raw_frame.supports_frame_metadata(rs.frame_metadata_value.gain_level)
-                    else 1  # Default gain if not available
-                )            
-            base_exposure = 100  # Assume ISO 100 at 100µs exposure
-            iso = (gain * (exposure_us / base_exposure)) if exposure_us else None
+            metadata = {}
 
-            metadata = {
-                "timestamp": time.time(),
-                "frame_number": frame_count,
-                "exposure": exposure_us,
-                "gain": raw_frame.get_frame_metadata(rs.frame_metadata_value.gain_level) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.gain_level) else None,
-                "blacklevel": 0, # raw_frame.get_frame_metadata(rs.frame_metadata_value.black_level) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.black_level) else None,
-                "whitelevel": 65535,  #raw_frame.get_frame_metadata(rs.frame_metadata_value.white_level) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.white_level) else None,
-                "brightness": raw_frame.get_frame_metadata(rs.frame_metadata_value.brightness) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.brightness) else None,
-                "white_balance": raw_frame.get_frame_metadata(rs.frame_metadata_value.white_balance) if raw_frame.supports_frame_metadata(rs.frame_metadata_value.white_balance) else None,
-                "shutter_speed": f"1/{int(round(1_000_000 / exposure_us))}" if exposure_us else None,
-                "ISO": iso,
-                }
-            as_shot_neutral = (
-                np.array([1.0, 1.0, 1.0])  # Default neutral white balance
-                if not raw_frame.supports_frame_metadata(rs.frame_metadata_value.white_balance)
-                else np.array(raw_frame.get_frame_metadata(rs.frame_metadata_value.white_balance))
-            )
-
+            """Exposure can be obtained directly from RealSense,
+            for the rest of metadata need to be accessed with Rawpy"""
             try:
-                color_matrix_2 = np.array(raw_frame.get_frame_metadata(rs.frame_metadata_value.color_matrix)).reshape(3, 3)
-            except AttributeError:
-                # print("⚠️ ColorMatrix2 not found, using default matrix.")
-                color_matrix_2 = np.eye(3)  # Use an identity matrix as fallback
-
-
-            # Store them properly in metadata
-            metadata["AsShotNeutral"] = as_shot_neutral.tolist()
-            metadata["ColorMatrix2"] = color_matrix_2.tolist()
-            whitebalance = np.array(metadata['AsShotNeutral']).reshape(-1, 3)
-            cam2camwb = np.array([np.diag(1. / x) for x in whitebalance])
-
-            xyz2camwb = np.array(metadata['ColorMatrix2']).reshape(-1, 3, 3)
-            rgb2camwb = xyz2camwb @ _RGB2XYZ
-            rgb2camwb /= rgb2camwb.sum(axis=-1, keepdims=True)
-
-            try:
-                cam2rgb = np.linalg.inv(rgb2camwb) @ cam2camwb
-                metadata['cam2rgb'] = cam2rgb.tolist()  # Convert to list for JSON storage
-            except np.linalg.LinAlgError:
-                print("⚠️ Warning: Color correction matrix is singular, using identity matrix.")
-                metadata['cam2rgb'] = np.eye(3).tolist()
-
+                metadata["exposure"] = raw_frame.get_frame_metadata(rs.frame_metadata_value.auto_exposure)
+            except:                
+                print("❌ Warning: Exposure metadata not available for this frame.")
+                for metadata_key in rs.frame_metadata_value.__members__.values():
+                    if raw_frame.supports_frame_metadata(metadata_key):
+                        value = raw_frame.get_frame_metadata(metadata_key)
+                        print(f"{metadata_key.name}: {value}")
+             
+            metadata["iso"] = None
 
             json_path = os.path.join(raw_folder, f"{frame_count}.json")
             with open(json_path, "w") as json_file:
                 json.dump(metadata, json_file, indent=4)
 
             frame_count += 1
-
-
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -311,6 +302,15 @@ def main():
             if plt.fignum_exists(fig.number):
                 plt.close(fig)
         print("🔄 Recording stopped.")
+        print("")
+        print("🔄 Metadata recording started.")
+        for file_name in os.listdir(raw_folder):
+            if file_name.endswith('.json'):
+                json_path = os.path.join(raw_folder, file_name)
+                dng_path = os.path.join(raw_folder, file_name.replace('.json', 'meta.dng'))
+                extract_metadata(dng_path, json_path, image_folder, file_name)
+        print("🏁 Metadata recording finished.")
+            
 
 if __name__ == "__main__":
     main()
