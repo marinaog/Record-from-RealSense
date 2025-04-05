@@ -6,7 +6,6 @@ import datetime
 import time
 import keyboard
 import matplotlib.pyplot as plt
-from pidng.core import RPICAM2DNG, BaseCameraModel, DNGTags, Tag
 from argparse import ArgumentParser
 import rawpy
 import imageio
@@ -97,24 +96,10 @@ def create_directories():
 
     return base_folder, depth_folder, raw_folder, imu_folder, image_folder
 
-class D435CameraModel(BaseCameraModel):
-    def __init__(self):
-        super().__init__()
-        # You would define the specific camera tags and format here
-        self.fmt = {"size": (1920, 1080), "stride": 1920, "bpp": 16, "format": "raw16"}  # example values
-        self.tags = self.create_tags()  # Create or assign your tags here
-
-    def create_tags(self):
-        # Dummy implementation - populate with actual D435 tags
-        tags = DNGTags()
-        tags.set(Tag.ImageWidth, 1920)
-        tags.set(Tag.ImageLength, 1080)
-        tags.set(Tag.BitsPerSample, 16)
-        tags.set(Tag.Compression, 1)   
-        tags.set(Tag.Software, "RealSense D435")
-        return tags
     
 def extract_metadata(dng_path, json_path, image_folder, file_name):
+    print("dng_path", dng_path)
+    print("json_path", json_path)
     try:
         # Open JSON file
         with open(json_path, "r") as json_file:
@@ -254,11 +239,7 @@ def main():
             # Raw images
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
-            raw_image.tofile(raw_folder + f"/{frame_count}meta.dng")
-            camera_model = D435CameraModel()
-            dng = RPICAM2DNG(camera_model)
-            dng.options(path=raw_folder, compress=False)
-            dng.convert(raw_image, filename=f"{frame_count}.dng")
+            raw_image.tofile(raw_folder + f"/{frame_count}.dng")
             
             if args.show:
                 plt.imshow(raw_image, cmap='gray')
@@ -307,7 +288,7 @@ def main():
         for file_name in os.listdir(raw_folder):
             if file_name.endswith('.json'):
                 json_path = os.path.join(raw_folder, file_name)
-                dng_path = os.path.join(raw_folder, file_name.replace('.json', 'meta.dng'))
+                dng_path = os.path.join(raw_folder, file_name.replace('.json', '.dng'))
                 extract_metadata(dng_path, json_path, image_folder, file_name)
         print("🏁 Metadata recording finished.")
             
