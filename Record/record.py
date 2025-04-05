@@ -126,7 +126,7 @@ def extract_metadata(dng_path, json_path, image_folder, file_name):
             metadata.update({
                 "BlackLevel": min(raw.black_level_per_channel),
                 "WhiteLevel": raw.white_level,
-                "cam2rg": raw.color_matrix.tolist()
+                "cam2rgb": raw.color_matrix.tolist()
             })
 
             
@@ -280,7 +280,7 @@ def main():
                         value = raw_frame.get_frame_metadata(metadata_key)
                         print(f"{metadata_key.name}: {value}")
              
-            metadata["iso"] = None
+            metadata["ISO"] = None
 
             json_path = os.path.join(raw_folder, f"{frame_count}.json")
             with open(json_path, "w") as json_file:
