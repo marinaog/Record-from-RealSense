@@ -11,12 +11,9 @@ import rawpy
 import imageio
 
 
-def find_devices(two_devices):
+def find_devices(two_devices, devices):    
     if two_devices:
         """Finds and assigns D435 as device A and L515 as device B."""
-        ctx = rs.context()
-        devices = ctx.query_devices()
-
         d435 = None
         l515 = None
 
@@ -101,9 +98,6 @@ def create_directories(two_devices):
 
     
 def extract_metadata(dng_path, json_path, image_folder, file_name, metadata_bool):
-    print("dng_path", dng_path)
-    if metadata_bool:
-        print("json_path", json_path)
     try:
         if metadata_bool:
             # Open JSON file
@@ -143,20 +137,30 @@ def extract_metadata(dng_path, json_path, image_folder, file_name, metadata_bool
     
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
-    parser.add_argument("--two_devices", default=False, type=bool)
     parser.add_argument("--show", default=False, type=bool)
     parser.add_argument("--metadata", default=False, type=bool)
     
     args = parser.parse_args()
     
-    # Identify devices
-    if args.two_devices:
-        d435_serial, l515_serial = find_devices(args.two_devices)
+    # Check how many devices are connected
+    ctx = rs.context()
+    devices = ctx.query_devices()
+    if len(devices) == 2:
+        two_devices = True
+    elif len(devices) == 1:
+        two_devices = False
     else:
-        d435_serial = find_devices(args.two_devices)
+        print("❌ No devices connected.")
+        exit()
+
+    # Identify devices
+    if two_devices:
+        d435_serial, l515_serial = find_devices(two_devices, devices)
+    else:
+        d435_serial = find_devices(two_devices, devices)
     
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories(args.two_devices)
+    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories(two_devices)
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -167,7 +171,7 @@ def main():
     config_A.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
     config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)  
 
-    if args.two_devices:
+    if two_devices:
         # Create pipeline for L515 (Device B)
         pipeline_B = rs.pipeline()
         config_B = rs.config()
@@ -187,7 +191,7 @@ def main():
         fig = plt.figure()
 
     try:
-        if args.two_devices:
+        if two_devices:
             print("⏳ Starting D435...")
             pipeline_A.start(config_A)
             time.sleep(1)  # Delay to avoid conflicts
@@ -217,7 +221,7 @@ def main():
             raw_frame = frames_A.get_color_frame()
 
             # IMU with fps
-            if args.two_devices:           
+            if two_devices:           
                 frames_B = pipeline_B.wait_for_frames()        
                 accel_frame = frames_B.first_or_default(rs.stream.accel)
                 gyro_frame = frames_B.first_or_default(rs.stream.gyro)
@@ -246,8 +250,8 @@ def main():
             # Raw images
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
-            print(raw_image.shape)
-            print(raw_image.size)
+            if raw_image.size != 2073600:
+                raise KeyError("❌ Error: Raw image size mismatch. Expected 2073600 pixels.")
 
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
 
@@ -287,7 +291,7 @@ def main():
     finally:
         print("🔄 Stopping pipelines...")
         pipeline_A.stop()
-        if args.two_devices:
+        if two_devices:
             pipeline_B.stop()     
 
         if args.show:
