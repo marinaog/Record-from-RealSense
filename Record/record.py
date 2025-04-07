@@ -79,10 +79,13 @@ def find_devices(two_devices):
         return d435i
     
 
-def create_directories():
+def create_directories(two_devices):
     """Creates a timestamped directory structure for storing data."""
     timestamp = datetime.datetime.now().strftime("%m.%d-%H.%M")
-    base_folder = f"Record/recordings/{timestamp}"
+    if two_devices:
+        base_folder = f"Record/recordings/two_devices/{timestamp}"
+    else:
+        base_folder = f"Record/recordings/one_device/{timestamp}"
 
     depth_folder = os.path.join(base_folder, "depth")
     raw_folder = os.path.join(base_folder, "raw")
@@ -97,34 +100,37 @@ def create_directories():
     return base_folder, depth_folder, raw_folder, imu_folder, image_folder
 
     
-def extract_metadata(dng_path, json_path, image_folder, file_name):
+def extract_metadata(dng_path, json_path, image_folder, file_name, metadata_bool):
     print("dng_path", dng_path)
-    print("json_path", json_path)
+    if metadata_bool:
+        print("json_path", json_path)
     try:
-        # Open JSON file
-        with open(json_path, "r") as json_file:
-            metadata = json.load(json_file) 
+        if metadata_bool:
+            # Open JSON file
+            with open(json_path, "r") as json_file:
+                metadata = json.load(json_file) 
 
         # Extract DNG metadata
         with rawpy.imread(dng_path) as raw:
-            # print(dir(raw))
-            metadata.update({
-                "BlackLevel": min(raw.black_level_per_channel),
-                "WhiteLevel": raw.white_level,
-                "cam2rgb": raw.color_matrix.tolist()
-            })
-
+            if metadata_bool:
+                metadata.update({
+                    "BlackLevel": min(raw.black_level_per_channel),
+                    "WhiteLevel": raw.white_level,
+                    "cam2rgb": raw.color_matrix.tolist()
+                })
             
             # Post-process RAW image and save as PNG
             processed_image = raw.postprocess()
-            img_path = os.path.join(image_folder, file_name.replace('.json', '.png'))
+            img_path = os.path.join(image_folder, file_name.replace('.dng', '.png'))
             imageio.imwrite(img_path, processed_image)
 
-        # Save updated metadata
-        with open(json_path, "w") as json_file:
-            json.dump(metadata, json_file, indent=4)
-
-        print(f"▫️ Metadata and images extracted for {file_name}")
+        if metadata_bool:
+            # Save updated metadata
+            with open(json_path, "w") as json_file:
+                json.dump(metadata, json_file, indent=4)
+            print(f"▫️ Metadata and images extracted for {file_name}")
+        else:
+            print(f"▫️ Images extracted for {file_name}")
 
     except json.JSONDecodeError:
         print(f"❌ Error: {json_path} is empty or corrupt.")
@@ -139,6 +145,7 @@ def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--two_devices", default=False, type=bool)
     parser.add_argument("--show", default=False, type=bool)
+    parser.add_argument("--metadata", default=False, type=bool)
     
     args = parser.parse_args()
     
@@ -149,7 +156,7 @@ def main():
         d435_serial = find_devices(args.two_devices)
     
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories()
+    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories(args.two_devices)
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -239,7 +246,11 @@ def main():
             # Raw images
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
+            print(raw_image.shape)
+            print(raw_image.size)
+
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
+
             
             if args.show:
                 plt.imshow(raw_image, cmap='gray')
@@ -248,24 +259,25 @@ def main():
                 plt.pause(0.01)
 
             # Metadata
-            metadata = {}
+            if args.metadata:
+                metadata = {}
 
-            """Exposure can be obtained directly from RealSense,
-            for the rest of metadata need to be accessed with Rawpy"""
-            try:
-                metadata["exposure"] = raw_frame.get_frame_metadata(rs.frame_metadata_value.auto_exposure)
-            except:                
-                print("❌ Warning: Exposure metadata not available for this frame.")
-                for metadata_key in rs.frame_metadata_value.__members__.values():
-                    if raw_frame.supports_frame_metadata(metadata_key):
-                        value = raw_frame.get_frame_metadata(metadata_key)
-                        print(f"{metadata_key.name}: {value}")
-             
-            metadata["ISO"] = None
+                """Exposure can be obtained directly from RealSense,
+                for the rest of metadata need to be accessed with Rawpy"""
+                try:
+                    metadata["exposure"] = raw_frame.get_frame_metadata(rs.frame_metadata_value.auto_exposure)
+                except:                
+                    print("❌ Warning: Exposure metadata not available for this frame.")
+                    for metadata_key in rs.frame_metadata_value.__members__.values():
+                        if raw_frame.supports_frame_metadata(metadata_key):
+                            value = raw_frame.get_frame_metadata(metadata_key)
+                            print(f"{metadata_key.name}: {value}")
+                
+                metadata["ISO"] = None
 
-            json_path = os.path.join(raw_folder, f"{frame_count}.json")
-            with open(json_path, "w") as json_file:
-                json.dump(metadata, json_file, indent=4)
+                json_path = os.path.join(raw_folder, f"{frame_count}.json")
+                with open(json_path, "w") as json_file:
+                    json.dump(metadata, json_file, indent=4)
 
             frame_count += 1
 
@@ -284,13 +296,23 @@ def main():
                 plt.close(fig)
         print("🔄 Recording stopped.")
         print("")
-        print("🔄 Metadata recording started.")
+        
+        if args.metadata:
+            print("🔄 Metadata + Images extraction started.")
+        else:
+            print("🔄 Images extraction started.")
+
         for file_name in os.listdir(raw_folder):
-            if file_name.endswith('.json'):
-                json_path = os.path.join(raw_folder, file_name)
-                dng_path = os.path.join(raw_folder, file_name.replace('.json', '.dng'))
-                extract_metadata(dng_path, json_path, image_folder, file_name)
-        print("🏁 Metadata recording finished.")
+            if file_name.endswith('.dng'):
+                dng_path = os.path.join(raw_folder, file_name)
+                json_path = os.path.join(raw_folder, file_name.replace('.dng', '.json'))
+                extract_metadata(dng_path, json_path, image_folder, file_name, args.metadata)
+
+        if args.metadata:
+            print("🏁 Metadata + Images extraction finished.")
+        else:
+            print("🏁 Images extraction finished.")
+        
             
 
 if __name__ == "__main__":
