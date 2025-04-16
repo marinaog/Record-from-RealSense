@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from argparse import ArgumentParser
 import rawpy
 import imageio
+from utils import RAW2RGB, RAW2sRGB
 
 
 def find_devices(two_devices, devices):    
@@ -88,57 +89,21 @@ def create_directories(two_devices):
     raw_folder = os.path.join(base_folder, "raw")
     imu_folder = os.path.join(base_folder, "imu")
     image_folder = os.path.join(base_folder, "images")
+    srgb_folder = os.path.join(base_folder, "sRGB")
 
     os.makedirs(depth_folder, exist_ok=True)
     os.makedirs(raw_folder, exist_ok=True)
     os.makedirs(imu_folder, exist_ok=True)
     os.makedirs(image_folder, exist_ok=True)
+    os.makedirs(srgb_folder, exist_ok=True)
 
-    return base_folder, depth_folder, raw_folder, imu_folder, image_folder
-
-    
-def extract_metadata(dng_path, json_path, image_folder, file_name, metadata_bool):
-    try:
-        if metadata_bool:
-            # Open JSON file
-            with open(json_path, "r") as json_file:
-                metadata = json.load(json_file) 
-
-        # Extract DNG metadata
-        with rawpy.imread(dng_path) as raw:
-            if metadata_bool:
-                metadata.update({
-                    "BlackLevel": min(raw.black_level_per_channel),
-                    "WhiteLevel": raw.white_level,
-                    "cam2rgb": raw.color_matrix.tolist()
-                })
-            
-            # Post-process RAW image and save as PNG
-            processed_image = raw.postprocess()
-            img_path = os.path.join(image_folder, file_name.replace('.dng', '.png'))
-            imageio.imwrite(img_path, processed_image)
-
-        if metadata_bool:
-            # Save updated metadata
-            with open(json_path, "w") as json_file:
-                json.dump(metadata, json_file, indent=4)
-            print(f"▫️ Metadata and images extracted for {file_name}")
-        else:
-            print(f"▫️ Images extracted for {file_name}")
-
-    except json.JSONDecodeError:
-        print(f"❌ Error: {json_path} is empty or corrupt.")
-    except rawpy.LibRawFileUnsupportedError:
-        print(f"❌ Error: {dng_path} is not a valid RAW file.")
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-
+    return base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder
 
     
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--show", default=False, type=bool)
-    parser.add_argument("--metadata", default=False, type=bool)
+    parser.add_argument("--sRGB", default=True, type=bool)
     
     args = parser.parse_args()
     
@@ -160,7 +125,7 @@ def main():
         d435_serial = find_devices(two_devices, devices)
     
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder, image_folder = create_directories(two_devices)
+    base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder = create_directories(two_devices)
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -185,11 +150,6 @@ def main():
         config_A.enable_stream(rs.stream.gyro)
         config_A.enable_stream(rs.stream.accel)
 
-    # Show RAW data
-    if args.show:
-        plt.ion()
-        fig = plt.figure()
-
     try:
         if two_devices:
             print("⏳ Starting D435...")
@@ -211,8 +171,6 @@ def main():
             if keyboard.is_pressed('q'):
                 break
 
-            if args.show and plt.fignum_exists(fig.number) == False:
-                break
 
             # Receive data from devices
             frames_A = pipeline_A.wait_for_frames()
@@ -256,32 +214,6 @@ def main():
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
 
             
-            if args.show:
-                plt.imshow(raw_image, cmap='gray')
-                plt.title("Live Raw Data")
-                plt.draw()
-                plt.pause(0.01)
-
-            # Metadata
-            if args.metadata:
-                metadata = {}
-
-                """Exposure can be obtained directly from RealSense,
-                for the rest of metadata need to be accessed with Rawpy"""
-                try:
-                    metadata["exposure"] = raw_frame.get_frame_metadata(rs.frame_metadata_value.auto_exposure)
-                except:                
-                    print("❌ Warning: Exposure metadata not available for this frame.")
-                    for metadata_key in rs.frame_metadata_value.__members__.values():
-                        if raw_frame.supports_frame_metadata(metadata_key):
-                            value = raw_frame.get_frame_metadata(metadata_key)
-                            print(f"{metadata_key.name}: {value}")
-                
-                metadata["ISO"] = None
-
-                json_path = os.path.join(raw_folder, f"{frame_count}.json")
-                with open(json_path, "w") as json_file:
-                    json.dump(metadata, json_file, indent=4)
 
             frame_count += 1
 
@@ -294,28 +226,14 @@ def main():
         if two_devices:
             pipeline_B.stop()     
 
-        if args.show:
-            plt.ioff()   
-            if plt.fignum_exists(fig.number):
-                plt.close(fig)
         print("🔄 Recording stopped.")
         print("")
+        print("🔄 Images extraction started.")
+
         
-        if args.metadata:
-            print("🔄 Metadata + Images extraction started.")
-        else:
-            print("🔄 Images extraction started.")
-
-        for file_name in os.listdir(raw_folder):
-            if file_name.endswith('.dng'):
-                dng_path = os.path.join(raw_folder, file_name)
-                json_path = os.path.join(raw_folder, file_name.replace('.dng', '.json'))
-                extract_metadata(dng_path, json_path, image_folder, file_name, args.metadata)
-
-        if args.metadata:
-            print("🏁 Metadata + Images extraction finished.")
-        else:
-            print("🏁 Images extraction finished.")
+        RAW2RGB(raw_folder, image_folder)
+        RAW2sRGB(raw_folder, srgb_folder)
+        print("🔄 Images extraction finished.")
         
             
 
