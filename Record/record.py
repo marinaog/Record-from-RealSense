@@ -226,14 +226,17 @@ def main():
         if two_devices:
             pipeline_B.stop()     
 
-        print("🔄 Recording stopped.")
+        print("🏁 Recording stopped.")
         print("")
-        print("🔄 Images extraction started.")
 
-        
+        print("🔄 Images extraction started.")        
         RAW2RGB(raw_folder, image_folder)
+        print("")
+
+        print("🔄 sRGB extraction started.")
         RAW2sRGB(raw_folder, srgb_folder)
-        print("🔄 Images extraction finished.")
+        print("")
+        print("🏁 Images extraction finished.")
         
             
 
