@@ -1,5 +1,6 @@
 import pyrealsense2 as rs
 import numpy as np
+import cv2
 import json
 import os
 import datetime
@@ -190,9 +191,9 @@ def main():
             time_of_arrival = raw_frame.get_frame_metadata(rs.frame_metadata_value.time_of_arrival)
             dt = time_of_arrival - previous_time_of_arrival if frame_count > 0 else 0
             if frame_count > 0:
-                print("frame count", frame_count,"dt",dt, time_of_arrival, previous_time_of_arrival)
+                print("frame count", frame_count,",    dt",dt)
             else:
-                print("frame count", frame_count,"dt",dt, time_of_arrival)
+                print("frame count", frame_count,",    dt",dt)
             previous_time_of_arrival = time_of_arrival
 
             accel_data = accel_frame.as_motion_frame().get_motion_data()
@@ -203,7 +204,8 @@ def main():
 
             # Depth 
             depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
-            depth_image.tofile(depth_folder + f"/{frame_count}.raw")
+            # depth_image.tofile(depth_folder + f"/{frame_count}.raw")
+            cv2.imwrite(depth_folder + f"/{frame_count}.png", depth_image)
 
             # Raw images
             raw_frame = frames_A.get_color_frame()
@@ -213,15 +215,13 @@ def main():
 
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
 
-            
-
             frame_count += 1
 
     except Exception as e:
         print(f"❌ Error: {e}")
     
     finally:
-        print("🔄 Stopping pipelines...")
+        print("🛑 Stopping pipelines...")
         pipeline_A.stop()
         if two_devices:
             pipeline_B.stop()     
@@ -237,7 +237,7 @@ def main():
         RAW2sRGB(raw_folder, srgb_folder)
         print("")
         print("🏁 Images extraction finished.")
-        
+        print("")
             
 
 if __name__ == "__main__":
