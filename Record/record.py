@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from argparse import ArgumentParser
 import rawpy
 import imageio
-from utils import RAW2RGB, RAW2sRGB
+from utils import RAW2RGB, RAW2sRGB, extract_intrinsics
 
 
 def find_devices(two_devices, devices):    
@@ -89,8 +89,9 @@ def create_directories(two_devices):
     depth_folder = os.path.join(base_folder, "depth")
     raw_folder = os.path.join(base_folder, "raw")
     imu_folder = os.path.join(base_folder, "imu")
-    image_folder = os.path.join(base_folder, "images")
+    image_folder = os.path.join(base_folder, "rgb")
     srgb_folder = os.path.join(base_folder, "sRGB")
+    
 
     os.makedirs(depth_folder, exist_ok=True)
     os.makedirs(raw_folder, exist_ok=True)
@@ -100,7 +101,15 @@ def create_directories(two_devices):
 
     return base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder
 
-    
+def intrinsics(base_folder, profile_A):    
+    rgb_profile = rs.video_stream_profile(profile_A.get_stream(rs.stream.color))
+    rgb_intrinsics = rgb_profile.get_intrinsics()
+
+    depth_sensor= profile_A.get_device().first_depth_sensor()
+
+    extract_intrinsics(base_folder, rgb_intrinsics, depth_sensor)
+
+
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--show", default=False, type=bool)
@@ -154,14 +163,14 @@ def main():
     try:
         if two_devices:
             print("⏳ Starting D435...")
-            pipeline_A.start(config_A)
+            profile_A = pipeline_A.start(config_A)
             time.sleep(1)  # Delay to avoid conflicts
 
             print("⏳ Starting L515...")
             pipeline_B.start(config_B)
         else:
             print("⏳ Starting D435i...")
-            pipeline_A.start(config_A)
+            profile_A = pipeline_A.start(config_A)
 
         print(f"✅ Recording started! Data will be saved in: {base_folder}")
         print("Press 'q' to stop.")
@@ -220,7 +229,11 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
     
-    finally:
+    finally:        
+        print("🔄 Creating intrinsics file.")    
+        intrinsics(base_folder, profile_A)
+        print("")
+
         print("🛑 Stopping pipelines...")
         pipeline_A.stop()
         if two_devices:
