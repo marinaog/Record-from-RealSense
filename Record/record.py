@@ -98,8 +98,11 @@ def create_directories(two_devices):
     os.makedirs(imu_folder, exist_ok=True)
     os.makedirs(image_folder, exist_ok=True)
     os.makedirs(srgb_folder, exist_ok=True)
+    
+    time_file_path = os.path.join(base_folder, "time_camera.txt")
+    time_file = open(time_file_path, "w")
 
-    return base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder
+    return base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder, time_file
 
 def intrinsics(base_folder, profile_A):    
     rgb_profile = rs.video_stream_profile(profile_A.get_stream(rs.stream.color))
@@ -135,7 +138,7 @@ def main():
         d435_serial = find_devices(two_devices, devices)
     
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder = create_directories(two_devices)
+    base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder, time_file = create_directories(two_devices)
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -211,6 +214,15 @@ def main():
 
             np.save(os.path.join(imu_folder + f"/{frame_count}.npy"), np.array(imu_data))
 
+
+            # Time text
+            if frame_count == 0:
+                time_of_reference = time_of_arrival
+            
+            time_to_record = time_of_arrival - time_of_reference
+
+            time_file.write(f"{frame_count} {time_to_record}\n")
+
             # Depth 
             depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
             # depth_image.tofile(depth_folder + f"/{frame_count}.raw")
@@ -238,6 +250,8 @@ def main():
         pipeline_A.stop()
         if two_devices:
             pipeline_B.stop()     
+        
+        time_file.close()
 
         print("🏁 Recording stopped.")
         print("")
