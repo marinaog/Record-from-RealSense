@@ -117,6 +117,7 @@ def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
     parser.add_argument("--show", default=False, type=bool)
     parser.add_argument("--sRGB", default=True, type=bool)
+    parser.add_argument("--depthas", default="png", choices=["png", "raw"])
     
     args = parser.parse_args()
     
@@ -225,8 +226,11 @@ def main():
 
             # Depth 
             depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
-            # depth_image.tofile(depth_folder + f"/{frame_count}.raw")
-            cv2.imwrite(depth_folder + f"/{frame_count}.png", depth_image)
+
+            if args.depthas == "raw":
+                depth_image.tofile(depth_folder + f"/{frame_count}.raw")
+            else:
+                cv2.imwrite(depth_folder + f"/{frame_count}.png", depth_image)
 
             # Raw images
             raw_frame = frames_A.get_color_frame()
