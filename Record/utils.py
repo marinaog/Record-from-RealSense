@@ -6,6 +6,7 @@ import imageio
 from tqdm import tqdm
 import math
 import yaml
+import pyrealsense2 as rs
 
 def load_raw_image(file_path, width, height):
     """
@@ -73,100 +74,22 @@ def extract_intrinsics(base_folder, rgb_intrinsics, depth_sensor):
     depth_scale = depth_sensor.get_depth_scale()
 
     camera_info = {
-        "Dataset": {
-            "Calibration": {
-                "fx": float(fx),
-                "fy": float(fy),
-                "cx": float(cx),
-                "cy": float(cy),
-                "k1": float(dist_coeffs[0]),
-                "k2": float(dist_coeffs[1]),
-                "p1": float(dist_coeffs[2]),
-                "p2": float(dist_coeffs[3]),
-                "k3": float(dist_coeffs[4]),
-                "distorted": True,
-                "width": int(width),
-                "height": int(height),
-                "depth_scale": float(depth_scale)
+        "Intrinsics": {
+            "fx": float(fx),
+            "fy": float(fy),
+            "cx": float(cx),
+            "cy": float(cy),
+            "k1": float(dist_coeffs[0]),
+            "k2": float(dist_coeffs[1]),
+            "p1": float(dist_coeffs[2]),
+            "p2": float(dist_coeffs[3]),
+            "k3": float(dist_coeffs[4]),
+            "distorted": True,
+            "width": int(width),
+            "height": int(height),
+            "depth_scale": float(depth_scale)
             }
-        },
-
-        "Results": {
-            "save_results": True,
-            "save_dir": "results",
-            "save_trj": True,
-            "save_trj_kf_intv": 5,
-            "use_gui": True,
-            "eval_rendering": False,
-            "use_wandb": False
-        },
-
-        "Training": {
-            "init_itr_num": 1050,
-            "init_gaussian_update": 100,
-            "init_gaussian_reset": 500,
-            "init_gaussian_th": 0.005,
-            "init_gaussian_extent": 30,
-            "tracking_itr_num": 100,
-            "mapping_itr_num": 150,
-            "gaussian_update_every": 150,
-            "gaussian_update_offset": 50,
-            "gaussian_th": 0.7,
-            "gaussian_extent": 1.0,
-            "gaussian_reset": 2001,
-            "size_threshold": 20,
-            "kf_interval": 5,
-            "window_size": 8,
-            "pose_window": 3,
-            "edge_threshold": 1.1,
-            "rgb_boundary_threshold": 0.01,
-            "alpha": 0.9,
-            "kf_translation": 0.08,
-            "kf_min_translation": 0.05,
-            "kf_overlap": 0.9,
-            "kf_cutoff": 0.3,
-            "prune_mode": "slam",
-            "single_thread": False,
-            "spherical_harmonics": False,
-            "lr": {
-                "cam_rot_delta": 0.003,
-                "cam_trans_delta": 0.001
-            }
-        },
-
-        "opt_params": {
-            "iterations": 30000,
-            "position_lr_init": 0.00016,
-            "position_lr_final": 0.0000016,
-            "position_lr_delay_mult": 0.01,
-            "position_lr_max_steps": 30000,
-            "feature_lr": 0.0025,
-            "opacity_lr": 0.05,
-            "scaling_lr": 0.001,
-            "rotation_lr": 0.001,
-            "percent_dense": 0.01,
-            "lambda_dssim": 0.2,
-            "densification_interval": 100,
-            "opacity_reset_interval": 3000,
-            "densify_from_iter": 500,
-            "densify_until_iter": 15000,
-            "densify_grad_threshold": 0.0002
-        },
-
-        "model_params": {
-            "sh_degree": 0,
-            "source_path": "",
-            "model_path": "",
-            "resolution": -1,
-            "white_background": False,
-            "data_device": "cuda"
-        },
-
-        "pipeline_params": {
-            "convert_SHs_python": False,
-            "compute_cov3D_python": False
-        }
-    }   
+        }   
     
     file_path = os.path.join(base_folder, "my_dataset.yaml")
 
