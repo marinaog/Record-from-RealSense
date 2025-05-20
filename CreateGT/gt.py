@@ -41,21 +41,12 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
                 'rotz': rotz
             }
         except Exception as e:
-            results[int(frame)] = {
-                'time': 0,
-                'x': 0,
-                'y': 0,
-                'z': 0,
-                'rotx': 0,
-                'roty': 0,
-                'rotz': 0
-            }
             print(f"Skipping row {frame} due to error: {e}")
             continue
 
     # Sort frames
     sorted_frames = sorted(results.items())
-    print(len(sorted_frames))
+    print("sorted frames", sorted_frames[motiontracker_frame:motiontracker_frame+10])
     # Write to file
     output_path = os.path.join(output_folder, f'{solid_name}_motion_data.txt')
     with open(output_path, 'w') as f:
@@ -63,6 +54,7 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
         print("Writing motion data to file...")
         i=0
         for frame, data in tqdm(sorted_frames[motiontracker_frame:final_limit]):
+            print("frame",frame)
             if i == 0:
                 print("frame",frame, "motiontracker_frame", motiontracker_frame)
                 i+=1
@@ -94,35 +86,43 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
     # Go through the camera times and save motion tracker whose times correspond to the camera times
     matched_lines = []
     
-    
-    finalcameratime_path = os.path.join(output_folder, 'final_camera_time.txt')
-    with open(finalcameratime_path, 'w') as fct:
-        for line in camera_lines[camera_frame:]: # We start from the camera frame of synchronization
-            cam_frame, cam_time = line.strip().split()
-            cam_frame = int(cam_frame)
-            cam_time = float(cam_time)
+    first = True
+    for line in camera_lines[camera_frame:]: # We start from the camera frame of synchronization
+        cam_frame, cam_time = line.strip().split()
+        cam_frame = int(cam_frame)
+        cam_time = float(cam_time)
 
-            # Find the closest motion tracker time
-            closest = min(motion_data, key=lambda x: abs(x[1] - cam_time))
-            matched_lines.append(closest[2])
+        # Set to 0 the first time of camera
+        if first:
+            firts_time_cam = cam_time
+            first = False
+        
+        cam_time = cam_time - firts_time_cam
 
-            # Write the camera time to the final camera time file
-            fct.write(f"{cam_frame} {cam_time:.1f}\n")
-            # print(f"Camera frame {cam_frame} time {cam_time} -> matched motion frame {closest[0]} time {closest[1]}")
+
+        # Find the closest motion tracker time
+        closest = min(motion_data, key=lambda x: abs(x[1] - cam_time))
+
+        # Rename the frame numbers column to match the camera frames number
+        list_to_save = closest[2].split()
+        list_to_save[0] = str(cam_frame) 
+        
+        matched_lines.append(list_to_save)
+        # print(f"Camera frame {cam_frame} time {cam_time} -> matched motion frame {closest[0]} time {closest[1]}")
 
     # Create gt.txt file
-    gt_path = os.path.join(output_folder, 'gt.txt')
+    gt_path = os.path.join(output_folder, 'groundtruth.txt')
     print("")
     print("Writing gt file in", gt_path)
     with open(gt_path, 'w') as fgt:
+        fgt.write(f"# Camera and depth frames used | Resetted Time (ms) | x (m) | y (m) | z (m) | rotx | roty | rotz \n")
         for line in matched_lines:
-            fgt.write(f"{line}\n")
+            fgt.write(" ".join(line) + "\n")
 
 
 # Path to files
 camera_times = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\one_device\recording\camera_time.txt"
 csv_file = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\recording.csv"
-
 
 # Manually synchronized frames
 camera_frame = 244
@@ -133,7 +133,7 @@ output_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Th
 
 # Convert CSV to motion tracker times .txt file
 solid_name = "solid1" # Tracked solid
-final_limit = None    # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
+final_limit = 7114    # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
 
 assert final_limit is None or final_limit > motiontracker_frame, "Final limit must be less than motion tracker frame"
 
