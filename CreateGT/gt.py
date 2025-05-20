@@ -41,24 +41,27 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
                 'rotz': rotz
             }
         except Exception as e:
-            print(f"Skipping row {frame} due to error: {e}")
+            # print(f"Skipping row {frame} due to error: {e}")
+            if motiontracker_frame <= int(frame) <= final_limit:
+                print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!")
             continue
 
-    # Sort frames
+    # Sort frames    
+    results = {frame: data for frame, data in results.items()
+           if motiontracker_frame <= int(frame) <= final_limit}
+    
     sorted_frames = sorted(results.items())
-    print("sorted frames", sorted_frames[motiontracker_frame:motiontracker_frame+10])
+
+    if len(sorted_frames) != final_limit-motiontracker_frame:
+        print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!")
+            
     # Write to file
     output_path = os.path.join(output_folder, f'{solid_name}_motion_data.txt')
+    print("")
+    print("Writing motion data to file...")
     with open(output_path, 'w') as f:
-        print("")
-        print("Writing motion data to file...")
-        i=0
-        for frame, data in tqdm(sorted_frames[motiontracker_frame:final_limit]):
-            print("frame",frame)
-            if i == 0:
-                print("frame",frame, "motiontracker_frame", motiontracker_frame)
-                i+=1
-            if frame == motiontracker_frame:
+        for frame, data in tqdm(sorted_frames):
+            if int(frame) == motiontracker_frame:
                 reference_time = data['time']
             accumulated_time = (data['time'] - reference_time) * 1e3
             f.write(f"{frame} {accumulated_time:.1f} {data['x']} {data['y']} {data['z']} {data['rotx']} {data['roty']} {data['rotz']}\n")
