@@ -6,48 +6,51 @@ import zipfile
 from pathlib import Path
 import sys
 
-def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontracker_frame, final_limit):
+# def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontracker_frame, final_limit):
+def extract_solid_data_from_csv(dataset_folder, csv_name, solid_name, motiontracker_frame, final_limit):
+    csv_file = os.path.join(dataset_folder, csv_name)
+    if not os.path.exists(csv_file):
+        print(f"CSV file not found: {csv_file}")
+        return None
+    
     with open(csv_file, newline='') as csvfile:
         reader = list(csv.reader(csvfile))
 
     # Data starts at row 7 (index 6 is the header)
     data_rows = reader[7:]
 
+    if final_limit is None:
+        final_limit = len(data_rows) - 7  # Adjust for header rows
     results = {}
     print("Processing in the CSV file...")
     for row in data_rows:
         frame = row[0]
         values = row[1:]
 
-        # if any(v == '' or v is None for v in values):
-        #     print("Frame", frame, "is empty or incomplete, skipping...")
-        #     continue  # skip incomplete rows
+        if any(v == '' or v is None for v in values):
+            print("Frame", frame, "is empty or incomplete, skipping...")
+            continue  # skip incomplete rows
 
-        try:
-            time = float(values[0])
-            if solid_name == "solid1":
-                rotx, roty, rotz = map(float, values[1:4])
-                x, y, z = map(float, values[4:7])
-            elif solid_name == "solid2":
-                rotx, roty, rotz = map(float, values[8:11])
-                x, y, z = map(float, values[11:14])
-            else:
-                raise ValueError(f"Unknown solid name: {solid_name}")
+        # try:
+        time = float(values[0])
+        if solid_name == "solid1":
+            rotx, roty, rotz = map(float, values[1:4])
+            x, y, z = map(float, values[4:7])
+        elif solid_name == "solid2":
+            rotx, roty, rotz = map(float, values[8:11])
+            x, y, z = map(float, values[11:14])
+        else:
+            raise ValueError(f"Unknown solid name: {solid_name}")
 
-            results[int(frame)] = {
-                'time': time,
-                'x': x,
-                'y': y,
-                'z': z,
-                'rotx': rotx,
-                'roty': roty,
-                'rotz': rotz
-            }
-        except Exception as e:
-            # print(f"Skipping row {frame} due to error: {e}")
-            if motiontracker_frame <= int(frame) <= final_limit:
-                print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!", str(frame))
-            continue
+        results[int(frame)] = {
+            'time': time,
+            'x': x,
+            'y': y,
+            'z': z,
+            'rotx': rotx,
+            'roty': roty,
+            'rotz': rotz
+        }
 
     # Sort frames    
     results = {frame: data for frame, data in results.items()
@@ -59,7 +62,7 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
         print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!")
             
     # Write to file
-    output_path = os.path.join(output_folder, f'{solid_name}_motion_data.txt')
+    output_path = os.path.join(dataset_folder, f'{solid_name}_motion_data.txt')
     print("")
     print("Writing motion data to file...")
     with open(output_path, 'w') as f:
@@ -74,7 +77,12 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
 
 
 
-def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder):
+# def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder):
+def generate_gt(dataset_folder, motion_tracker_times, camera_frame, cut_beginning, cut_end):        
+    camera_times = os.path.join(dataset_folder, 'time_camera.txt')
+    if not os.path.exists(camera_times):
+        print(f"❌ Camera times file not found: {camera_times}")
+        return None
     
     with open(camera_times, 'r') as fc:
         camera_lines = fc.readlines()
@@ -98,16 +106,21 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
         cam_frame = int(cam_frame)
         cam_time = float(cam_time)
 
-        # Save useful frames
-        used_frames.append(cam_frame)
-
         # Set to 0 the first time of camera
         if first:
             firts_time_cam = cam_time
             first = False
         
+        if cut_beginning is not None and cam_frame < cut_beginning:
+            continue
+
+        if cut_end is not None and cam_frame > cut_end:
+            continue
+
         cam_time = cam_time - firts_time_cam
 
+        # Save useful frames
+        used_frames.append(cam_frame)
 
         # Find the closest motion tracker time
         closest = min(motion_data, key=lambda x: abs(x[1] - cam_time))
@@ -120,7 +133,7 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
         # print(f"Camera frame {cam_frame} time {cam_time} -> matched motion frame {closest[0]} time {closest[1]}")
 
     # Create gt.txt file
-    gt_path = os.path.join(output_folder, 'groundtruth.txt')
+    gt_path = os.path.join(dataset_folder, 'groundtruth.txt')
     print("")
     print("Writing gt file in", gt_path)
     with open(gt_path, 'w') as fgt:
@@ -130,9 +143,12 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
 
     return used_frames
 
-def create_zip(used_frames, dataset_folder, groundtruth_path, scene_name):
+# def create_zip(used_frames, dataset_folder, groundtruth_path, scene_name):
+def create_zip(used_frames, dataset_folder, scene_name):
     print("✍🏼 Creating zip file...")
     output_zip = os.path.join(dataset_folder, scene_name + ".zip")
+
+    groundtruth_path = os.path.join(dataset_folder, 'groundtruth.txt')
     
     with zipfile.ZipFile(output_zip, 'w') as zipf:
         # Add groundtruth.txt
@@ -153,30 +169,28 @@ def create_zip(used_frames, dataset_folder, groundtruth_path, scene_name):
     print(f"Zip file created: {output_zip}")
 
 # Path to files
-camera_times = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\one_device\recording\camera_time.txt"
-csv_file = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\recording.csv"
+dataset_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\objectsonthefloor"
+csv_name = "objectsonthefloor.csv"
 
-# Manually synchronized frames
-camera_frame = 244
-motiontracker_frame = 1530
+# Manually synchronized frames  
+camera_frame = 236
+motiontracker_frame = 2168
 
-# Where to save the times of the Motion Tracker
-output_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset"
+# Cut the video at the beginning and end, set to None if you don't want to cut it
+cut_beginning, cut_end = 393, None
 
 # Convert CSV to motion tracker times .txt file
 solid_name = "solid2" # Tracked solid
-final_limit = 7114    # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
+final_limit = None    # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
 
 assert final_limit is None or final_limit > motiontracker_frame, "Final limit must be less than motion tracker frame"
 
-motion_tracker_times = extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontracker_frame, final_limit)
+motion_tracker_times = extract_solid_data_from_csv(dataset_folder, csv_name, solid_name, motiontracker_frame, final_limit)
 
 # Synchronize times and get a final gt
-used_frames = generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
+used_frames = generate_gt(dataset_folder, motion_tracker_times, camera_frame, cut_beginning, cut_end)
 
 # Create a .zip file with everything
-# TODO: Move everything to the same folder and clean paths
-dataset_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\one_device\recording"
-groundtruth_path = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\groundtruth.txt"
-scene_name = "test_scene"
-create_zip(used_frames, dataset_folder, groundtruth_path, scene_name)
+scene_name = csv_name[:-4]
+create_zip(used_frames, dataset_folder, scene_name)
+# create_zip(used_frames, dataset_folder, groundtruth_path, scene_name)
