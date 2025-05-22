@@ -2,6 +2,9 @@ import os
 import numpy as np
 from tqdm import tqdm
 import csv
+import zipfile
+from pathlib import Path
+import sys
 
 def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontracker_frame, final_limit):
     with open(csv_file, newline='') as csvfile:
@@ -12,7 +15,7 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
 
     results = {}
     print("Processing in the CSV file...")
-    for row in tqdm(data_rows):
+    for row in data_rows:
         frame = row[0]
         values = row[1:]
 
@@ -43,7 +46,7 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
         except Exception as e:
             # print(f"Skipping row {frame} due to error: {e}")
             if motiontracker_frame <= int(frame) <= final_limit:
-                print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!")
+                print("THERE ARE WRONG VALUES IN IMPORTANT PARTS OF THE CSV FILE!", str(frame))
             continue
 
     # Sort frames    
@@ -60,7 +63,7 @@ def extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontrack
     print("")
     print("Writing motion data to file...")
     with open(output_path, 'w') as f:
-        for frame, data in tqdm(sorted_frames):
+        for frame, data in sorted_frames:
             if int(frame) == motiontracker_frame:
                 reference_time = data['time']
             accumulated_time = (data['time'] - reference_time) * 1e3
@@ -88,12 +91,15 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
 
     # Go through the camera times and save motion tracker whose times correspond to the camera times
     matched_lines = []
-    
+    used_frames = []
     first = True
     for line in camera_lines[camera_frame:]: # We start from the camera frame of synchronization
         cam_frame, cam_time = line.strip().split()
         cam_frame = int(cam_frame)
         cam_time = float(cam_time)
+
+        # Save useful frames
+        used_frames.append(cam_frame)
 
         # Set to 0 the first time of camera
         if first:
@@ -122,6 +128,29 @@ def generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
         for line in matched_lines:
             fgt.write(" ".join(line) + "\n")
 
+    return used_frames
+
+def create_zip(used_frames, dataset_folder, groundtruth_path, scene_name):
+    print("✍🏼 Creating zip file...")
+    output_zip = os.path.join(dataset_folder, scene_name + ".zip")
+    
+    with zipfile.ZipFile(output_zip, 'w') as zipf:
+        # Add groundtruth.txt
+        zipf.write(groundtruth_path, arcname="groundtruth.txt")
+
+        # Add corresponding frame files from rgb and depth folders
+        for folder_name in ['sRGB','rgb', 'depth']:
+            folder_path = os.path.join(dataset_folder, folder_name)
+            print(f"Uploading {folder_name} folder...")
+            for frame in tqdm(used_frames):
+                frame_file = os.path.join(folder_path, f"{frame}.png")
+                if os.path.exists(frame_file):
+                    arcname = os.path.join(folder_name, f"{frame}.png")
+                    zipf.write(frame_file, arcname=arcname)
+                else:
+                    print(f"Warning: {folder_name}/{frame}.png not found.")
+
+    print(f"Zip file created: {output_zip}")
 
 # Path to files
 camera_times = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\one_device\recording\camera_time.txt"
@@ -135,7 +164,7 @@ motiontracker_frame = 1530
 output_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset"
 
 # Convert CSV to motion tracker times .txt file
-solid_name = "solid1" # Tracked solid
+solid_name = "solid2" # Tracked solid
 final_limit = 7114    # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
 
 assert final_limit is None or final_limit > motiontracker_frame, "Final limit must be less than motion tracker frame"
@@ -143,4 +172,11 @@ assert final_limit is None or final_limit > motiontracker_frame, "Final limit mu
 motion_tracker_times = extract_solid_data_from_csv(csv_file, output_folder, solid_name, motiontracker_frame, final_limit)
 
 # Synchronize times and get a final gt
-generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
+used_frames = generate_gt(camera_times, motion_tracker_times, camera_frame, output_folder)
+
+# Create a .zip file with everything
+# TODO: Move everything to the same folder and clean paths
+dataset_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\one_device\recording"
+groundtruth_path = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\groundtruth.txt"
+scene_name = "test_scene"
+create_zip(used_frames, dataset_folder, groundtruth_path, scene_name)
