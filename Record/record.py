@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from argparse import ArgumentParser
 import rawpy
 import imageio
-from utils import RAW2RGB, RAW2sRGB, extract_intrinsics
+from utils import extract_intrinsics, RAW2RGB, RAW2sRGB, testing_record
 
 
 def find_devices(two_devices, devices):    
@@ -176,7 +176,7 @@ def main():
             print("⏳ Starting D435i...")
             profile_A = pipeline_A.start(config_A)
 
-        print(f"✅ Recording started! Data will be saved in: {base_folder}")
+        print(f"🎥 Recording started! Data will be saved in: {base_folder}")
         print("Press 'q' to stop.")
 
         frame_count = 0
@@ -246,6 +246,7 @@ def main():
         print(f"❌ Error: {e}")
     
     finally:        
+        print("")
         print("🔄 Creating intrinsics file.")    
         intrinsics(base_folder, profile_A)
         print("")
@@ -267,9 +268,13 @@ def main():
         print("🔄 sRGB extraction started.")
         RAW2sRGB(raw_folder, srgb_folder)
         print("")
-        print("🏁 Images extraction finished.")
+        
+        print(" Testing recording...")
+        testing_record(raw_folder, image_folder, srgb_folder)
         print("")
-            
+
+        print("🏁 Images extraction finished.")
+        
 
 if __name__ == "__main__":
     main()
