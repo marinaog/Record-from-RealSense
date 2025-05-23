@@ -7,9 +7,10 @@ import time
 import rerun.blueprint as rrb
 
 # --- Configuration ---
-rgb_folder = r"Record\recordings\one_device\recording\sRGB"
-depth_folder = r"Record\recordings\one_device\recording\depth"
-trajectory_file = r"groundtruth.txt"
+dataset_folder = r"Record\recordings\objectsonthefloor"
+rgb_folder = os.path.join(dataset_folder, "sRGB")
+depth_folder = os.path.join(dataset_folder, "depth")
+trajectory_file = os.path.join(dataset_folder, "groundtruth.txt")
 
 # Initialize rerun
 rr.init("slam_visualization", spawn=True)
