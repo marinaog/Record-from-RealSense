@@ -1,15 +1,11 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
-import json
 import os
 import datetime
 import time
 import keyboard
-import matplotlib.pyplot as plt
 from argparse import ArgumentParser
-import rawpy
-import imageio
 from utils import extract_intrinsics, RAW2RGB, RAW2sRGB, testing_record
 
 
@@ -147,7 +143,7 @@ def main():
 
     # Configure D435 or D435i (Device A) - Depth + RAW
     config_A.enable_device(d435_serial)
-    config_A.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+    config_A.enable_stream(rs.stream.depth, 640, 360, rs.format.z16, 30)
     config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)  
 
     if two_devices:
