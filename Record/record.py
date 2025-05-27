@@ -146,6 +146,10 @@ def main():
     config_A.enable_stream(rs.stream.depth, 640, 360, rs.format.z16, 30)
     config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)  
 
+    # Create align object to align depth to color
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+
     if two_devices:
         # Create pipeline for L515 (Device B)
         pipeline_B = rs.pipeline()
@@ -185,8 +189,12 @@ def main():
             # Receive data from devices
             frames_A = pipeline_A.wait_for_frames()
 
-            depth_frame = frames_A.get_depth_frame()
-            raw_frame = frames_A.get_color_frame()
+            # Align frames
+            aligned_frames = align.process(frames_A)
+
+            # Get aligned frames
+            depth_frame = aligned_frames.get_depth_frame()
+            raw_frame = aligned_frames.get_color_frame()
 
             # IMU with fps
             if two_devices:           
