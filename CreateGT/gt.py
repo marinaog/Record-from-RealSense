@@ -20,6 +20,7 @@ def extract_solid_data_from_csv(
 
     if final_limit is None:
         final_limit = len(data_rows)  # Adjust for header rows
+        print(final_limit)
     results = {}
     print("Processing in the CSV file...")
     for row in data_rows:
@@ -198,14 +199,16 @@ csv_name = "dark_kitchen.csv"
 
 # Manually synchronized frames
 camera_frame = 90
-motiontracker_frame = 1033
+motiontracker_frame = 1030
 
 # Cut the video at the beginning and end, set to None if you don't want to cut it (in camera frames)
 cut_beginning, cut_end = 205, 546
 
+# Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
+final_limit = None  
+
 # Convert CSV to motion tracker times .txt file
 solid_name = "solid2"  # Tracked solid
-final_limit = None  # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
 
 assert final_limit is None or final_limit > motiontracker_frame, (
     "Final limit must be less than motion tracker frame"
