@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 from utils import extract_intrinsics, RAW2RGB, RAW2sRGB, testing_record
 
 
-def find_devices(two_devices, devices):    
+def find_devices(two_devices, devices):
     if two_devices:
         """Finds and assigns D435 as device A and L515 as device B."""
         d435 = None
@@ -33,11 +33,11 @@ def find_devices(two_devices, devices):
             not_connected.append("l515")
         else:
             print(f"✅ L515 (Device B): {l515}")
-            
+
         if len(not_connected) > 0:
             for device in not_connected:
                 print(f"❌ {device} not connected.")
-                print(f"Devices connected:")
+                print("Devices connected:")
                 for dev in devices:
                     print(dev.get_info(rs.camera_info.name))
             exit()
@@ -62,17 +62,17 @@ def find_devices(two_devices, devices):
             not_connected.append("d435i")
         else:
             print(f"✅ D435i: {d435i}")
-            
+
         if len(not_connected) > 0:
             for device in not_connected:
                 print(f"❌ {device} not connected.")
-                print(f"Devices connected:")
+                print("Devices connected:")
                 for dev in devices:
                     print(dev.get_info(rs.camera_info.name))
             exit()
 
         return d435i
-    
+
 
 def create_directories(two_devices):
     """Creates a timestamped directory structure for storing data."""
@@ -87,36 +87,42 @@ def create_directories(two_devices):
     imu_folder = os.path.join(base_folder, "imu")
     image_folder = os.path.join(base_folder, "rgb")
     srgb_folder = os.path.join(base_folder, "sRGB")
-    
 
     os.makedirs(depth_folder, exist_ok=True)
     os.makedirs(raw_folder, exist_ok=True)
     os.makedirs(imu_folder, exist_ok=True)
     os.makedirs(image_folder, exist_ok=True)
     os.makedirs(srgb_folder, exist_ok=True)
-    
+
     time_file_path = os.path.join(base_folder, "time_camera.txt")
     time_file = open(time_file_path, "w")
 
-    return base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder, time_file
+    return (
+        base_folder,
+        depth_folder,
+        raw_folder,
+        imu_folder,
+        image_folder,
+        srgb_folder,
+        time_file,
+    )
 
-def intrinsics(base_folder, profile_A):    
+
+def intrinsics(base_folder, profile_A):
     rgb_profile = rs.video_stream_profile(profile_A.get_stream(rs.stream.color))
     rgb_intrinsics = rgb_profile.get_intrinsics()
 
-    depth_sensor= profile_A.get_device().first_depth_sensor()
+    depth_sensor = profile_A.get_device().first_depth_sensor()
 
     extract_intrinsics(base_folder, rgb_intrinsics, depth_sensor)
 
 
 def main():
     parser = ArgumentParser(description="Recording data from intel RealSense devices")
-    parser.add_argument("--show", default=False, type=bool)
-    parser.add_argument("--sRGB", default=True, type=bool)
     parser.add_argument("--depthas", default="png", choices=["png", "raw"])
-    
+
     args = parser.parse_args()
-    
+
     # Check how many devices are connected
     ctx = rs.context()
     devices = ctx.query_devices()
@@ -133,9 +139,17 @@ def main():
         d435_serial, l515_serial = find_devices(two_devices, devices)
     else:
         d435_serial = find_devices(two_devices, devices)
-    
+
     # Create directories
-    base_folder, depth_folder, raw_folder, imu_folder, image_folder, srgb_folder, time_file = create_directories(two_devices)
+    (
+        base_folder,
+        depth_folder,
+        raw_folder,
+        imu_folder,
+        image_folder,
+        srgb_folder,
+        time_file,
+    ) = create_directories(two_devices)
 
     # Create pipelines for D435(i) (Device A)
     pipeline_A = rs.pipeline()
@@ -144,7 +158,7 @@ def main():
     # Configure D435 or D435i (Device A) - Depth + RAW
     config_A.enable_device(d435_serial)
     config_A.enable_stream(rs.stream.depth, 640, 360, rs.format.z16, 30)
-    config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)  
+    config_A.enable_stream(rs.stream.color, 1920, 1080, rs.format.raw16, 30)
 
     # Create align object to align depth to color
     align_to = rs.stream.color
@@ -182,9 +196,8 @@ def main():
         frame_count = 0
 
         while True:
-            if keyboard.is_pressed('q'):
+            if keyboard.is_pressed("q"):
                 break
-
 
             # Receive data from devices
             frames_A = pipeline_A.wait_for_frames()
@@ -197,38 +210,49 @@ def main():
             raw_frame = aligned_frames.get_color_frame()
 
             # IMU with fps
-            if two_devices:           
-                frames_B = pipeline_B.wait_for_frames()        
+            if two_devices:
+                frames_B = pipeline_B.wait_for_frames()
                 accel_frame = frames_B.first_or_default(rs.stream.accel)
                 gyro_frame = frames_B.first_or_default(rs.stream.gyro)
-            else: 
+            else:
                 accel_frame = frames_A.first_or_default(rs.stream.accel)
                 gyro_frame = frames_A.first_or_default(rs.stream.gyro)
 
-            time_of_arrival = raw_frame.get_frame_metadata(rs.frame_metadata_value.time_of_arrival)
+            time_of_arrival = raw_frame.get_frame_metadata(
+                rs.frame_metadata_value.time_of_arrival
+            )
             dt = time_of_arrival - previous_time_of_arrival if frame_count > 0 else 0
             if frame_count > 0:
-                print("frame count", frame_count,",    dt",dt)
+                print("frame count", frame_count, ",    dt", dt)
             else:
-                print("frame count", frame_count,",    dt",dt)
+                print("frame count", frame_count, ",    dt", dt)
             previous_time_of_arrival = time_of_arrival
 
             accel_data = accel_frame.as_motion_frame().get_motion_data()
             gyro_data = gyro_frame.as_motion_frame().get_motion_data()
-            imu_data = [dt, accel_data.x, accel_data.y, accel_data.z, gyro_data.x, gyro_data.y, gyro_data.z]
+            imu_data = [
+                dt,
+                accel_data.x,
+                accel_data.y,
+                accel_data.z,
+                gyro_data.x,
+                gyro_data.y,
+                gyro_data.z,
+            ]
 
-            np.save(os.path.join(imu_folder + f"/{frame_count}.npy"), np.array(imu_data))
-
+            np.save(
+                os.path.join(imu_folder + f"/{frame_count}.npy"), np.array(imu_data)
+            )
 
             # Time text
             if frame_count == 0:
                 time_of_reference = time_of_arrival
-            
+
             time_to_record = time_of_arrival - time_of_reference
 
             time_file.write(f"{frame_count} {time_to_record}\n")
 
-            # Depth 
+            # Depth
             depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
 
             if args.depthas == "raw":
@@ -240,7 +264,9 @@ def main():
             raw_frame = frames_A.get_color_frame()
             raw_image = np.asanyarray(raw_frame.get_data(), dtype=np.uint16)
             if raw_image.size != 2073600:
-                raise KeyError("❌ Error: Raw image size mismatch. Expected 2073600 pixels.")
+                raise KeyError(
+                    "❌ Error: Raw image size mismatch. Expected 2073600 pixels."
+                )
 
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
 
@@ -248,37 +274,37 @@ def main():
 
     except Exception as e:
         print(f"❌ Error: {e}")
-    
-    finally:        
+
+    finally:
         print("")
-        print("🔄 Creating intrinsics file.")    
+        print("🔄 Creating intrinsics file.")
         intrinsics(base_folder, profile_A)
         print("")
 
         print("🛑 Stopping pipelines...")
         pipeline_A.stop()
         if two_devices:
-            pipeline_B.stop()     
-        
+            pipeline_B.stop()
+
         time_file.close()
 
         print("🏁 Recording stopped.")
         print("")
 
-        print("🔄 Images extraction started.")        
+        print("🔄 Images extraction started.")
         RAW2RGB(raw_folder, image_folder)
         print("")
 
         print("🔄 sRGB extraction started.")
         RAW2sRGB(raw_folder, srgb_folder)
         print("")
-        
+
         print(" Testing recording...")
         testing_record(raw_folder, image_folder, srgb_folder)
         print("")
 
         print("🏁 Images extraction finished.")
-        
+
 
 if __name__ == "__main__":
     main()
