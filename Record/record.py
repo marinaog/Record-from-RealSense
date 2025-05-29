@@ -5,8 +5,15 @@ import os
 import datetime
 import time
 import keyboard
+import json
 from argparse import ArgumentParser
-from utils import extract_intrinsics, RAW2RGB, RAW2sRGB, testing_record
+from utils import (
+    extract_intrinsics,
+    RAW2RGB,
+    RAW2sRGB,
+    testing_record,
+    extract_metadata,
+)
 
 
 def find_devices(two_devices, devices):
@@ -87,12 +94,14 @@ def create_directories(two_devices):
     imu_folder = os.path.join(base_folder, "imu")
     image_folder = os.path.join(base_folder, "rgb")
     srgb_folder = os.path.join(base_folder, "sRGB")
+    metadata_folder = os.path.join(base_folder, "metadata")
 
     os.makedirs(depth_folder, exist_ok=True)
     os.makedirs(raw_folder, exist_ok=True)
     os.makedirs(imu_folder, exist_ok=True)
     os.makedirs(image_folder, exist_ok=True)
     os.makedirs(srgb_folder, exist_ok=True)
+    os.makedirs(metadata_folder, exist_ok=True)
 
     time_file_path = os.path.join(base_folder, "time_camera.txt")
     time_file = open(time_file_path, "w")
@@ -105,6 +114,7 @@ def create_directories(two_devices):
         image_folder,
         srgb_folder,
         time_file,
+        metadata_folder,
     )
 
 
@@ -149,6 +159,7 @@ def main():
         image_folder,
         srgb_folder,
         time_file,
+        metadata_folder,
     ) = create_directories(two_devices)
 
     # Create pipelines for D435(i) (Device A)
@@ -270,6 +281,32 @@ def main():
 
             raw_image.tofile(raw_folder + f"/{frame_count}.dng")
 
+            # Metadata
+            metadata = {}
+            """Exposure can be obtained directly from RealSense,
+            for the rest of metadata need to be accessed with Rawpy"""
+            try:
+                metadata["exposure"] = raw_frame.get_frame_metadata(
+                    rs.frame_metadata_value.auto_exposure
+                )
+            except Exception:
+                print(
+                    "❌ Warning: Exposure metadata not available for frame {frame_count}."
+                )
+
+            print("Supported metadata keys:")
+            if frame_count == 0:
+                for metadata_key in rs.frame_metadata_value.__members__.values():
+                    if raw_frame.supports_frame_metadata(metadata_key):
+                        value = raw_frame.get_frame_metadata(metadata_key)
+                        print(f"{metadata_key.name}: {value}")
+
+            metadata["ISO"] = None
+
+            json_path = os.path.join(metadata_folder, f"{frame_count}.json")
+            with open(json_path, "w") as json_file:
+                json.dump(metadata, json_file, indent=4)
+
             frame_count += 1
 
     except Exception as e:
@@ -303,7 +340,11 @@ def main():
         testing_record(raw_folder, image_folder, srgb_folder)
         print("")
 
-        print("🏁 Images extraction finished.")
+        print("🔄 Metadata extraction started.")
+        extract_metadata(raw_folder, metadata_folder)
+        print("")
+
+        print("🏁 Dataset extraction finished.")
 
 
 if __name__ == "__main__":
