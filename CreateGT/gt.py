@@ -19,7 +19,7 @@ def extract_solid_data_from_csv(
     data_rows = reader[7:]
 
     if final_limit is None:
-        final_limit = len(data_rows)  # Adjust for header rows
+        final_limit = len(data_rows) -1 # Usually the last row is empty
         print(final_limit)
     results = {}
     print("Processing in the CSV file...")
@@ -27,16 +27,18 @@ def extract_solid_data_from_csv(
         frame = row[0]
         values = row[1:]
 
-        if any(v == "" or v is None for v in values):
-            print("Frame", frame, "is empty or incomplete, skipping...")
-            continue  # skip incomplete rows
 
-        # try:
         time = float(values[0])
         if solid_name == "solid1":
+            if any(v == "" or v is None for v in values[1:7]):
+                print("Frame", frame, "is empty or incomplete, skipping...")
+                continue  # skip incomplete rows
             rotx, roty, rotz = map(float, values[1:4])
             x, y, z = map(float, values[4:7])
         elif solid_name == "solid2":
+            if any(v == "" or v is None for v in values[8:14]):
+                print("Frame", frame, "is empty or incomplete, skipping...")
+                continue  # skip incomplete rows
             rotx, roty, rotz = map(float, values[8:11])
             x, y, z = map(float, values[11:14])
         else:
@@ -194,15 +196,15 @@ def create_zip(used_frames, dataset_folder, scene_name):
 
 
 # Path to files
-dataset_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\dark_kitchen"
-csv_name = "dark_kitchen.csv"
+dataset_folder = r"C:\Users\marin\OneDrive - UNIVERSIDAD DE SEVILLA\Escritorio\Thesis\Our dataset\Record\recordings\objects_from_front"
+csv_name = "nicerecord.csv"
 
 # Manually synchronized frames
-camera_frame = 90
-motiontracker_frame = 1030
+camera_frame = 135
+motiontracker_frame = 856
 
 # Cut the video at the beginning and end, set to None if you don't want to cut it (in camera frames)
-cut_beginning, cut_end = 205, 546
+cut_beginning, cut_end = 261, 527
 
 # Number of frames from which the CSV starts being empty or with ,,,,,  (Set to None if there aren't)
 final_limit = None  
