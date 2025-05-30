@@ -290,12 +290,14 @@ def main():
                     rs.frame_metadata_value.auto_exposure
                 )
             except Exception:
-                print(
-                    "❌ Warning: Exposure metadata not available for frame {frame_count}."
-                )
+                # print(
+                #     f"❌ Warning: Exposure metadata not available for frame {frame_count}."
+                # )
+                metadata["exposure"] = None
+            
 
-            print("Supported metadata keys:")
             if frame_count == 0:
+                print("Supported metadata keys:")
                 for metadata_key in rs.frame_metadata_value.__members__.values():
                     if raw_frame.supports_frame_metadata(metadata_key):
                         value = raw_frame.get_frame_metadata(metadata_key)

@@ -161,6 +161,8 @@ def extract_metadata(raw_folder, metadata_folder):
         dng_file = os.path.join(raw_folder, file_name.replace("json", "dng"))
         json_file = os.path.join(metadata_folder, file_name)
 
+        # with rawpy.imread(dng_file) as raw:
+        #     print(dir(raw)) 
         try:
             with open(json_file, "r") as f:
                 metadata = json.load(f)
