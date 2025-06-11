@@ -7,59 +7,12 @@ import numpy as np
 
 from Record.utils import load_raw_image
 
-def RAW2RGB(
-    frame,
-    input_file,
-    output_folder,
-    width=1920,
-    height=1080,
-    bayer_pattern=cv2.COLOR_BAYER_GR2BGR,
-):
-    """
-    Process .dng files demosaic, and save as RGB.
-    """
-    output_path = os.path.join(output_folder, str(frame) + '.png')
-    if os.path.isfile(output_path):
-        return output_path
-    raw_image = load_raw_image(input_file, width, height)
-    bgr_image = cv2.cvtColor(raw_image, bayer_pattern)
-    rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
-
-    cv2.imwrite(output_path, rgb_image)
-    return output_path
-
-
-def RAW2sRGB(frame, input_file, sRGB_folder):
-    """
-    RealSense sRGB processing from that I am not using, because if I can't use it to go from rendered green -> sRGB.
-    Process .dng files and converts them into sRGB in the way realsense makes it!.
-    """
-    with rawpy.imread(input_file) as raw:
-        rgb_srgb = raw.postprocess(
-            use_camera_wb=True,  # Use white balance from metadata
-            output_color=rawpy.ColorSpace.sRGB,  # Convert to sRGB color space
-            gamma=(2.2, 0.0),  # Apply sRGB gamma (standard 2.2)
-            no_auto_bright=True,  # Do not apply automatic brightness adjustments
-            output_bps=8,  # Output 8-bit per channel (standard for images)
-        )
-        rgb_srgb = rgb_srgb[..., [2, 1, 0]]  # Convert from BGR to RGB
-
-        # Save the sRGB image as a PNG 
-        output_path = os.path.join(sRGB_folder,str(frame) + '.png')
-        imageio.imwrite(output_path, rgb_srgb)
-
-
 def gamma_encode_srgb(x):
     a = 0.055
     return np.where(x <= 0.0031308, 12.92 * x, (1 + a) * x ** (1 / 2.4) - a)
 
-def RGB2sRGB(frame, rgb_file, srgb_folder, hdr):    
-    output_path = srgb_folder + '/' + str(frame) + '.png'
-    if not os.path.isfile(output_path):
-        img_demosaicked = cv2.imread(rgb_file, cv2.IMREAD_UNCHANGED) 
-        img_demosaicked = cv2.cvtColor(img_demosaicked, cv2.COLOR_BGR2RGB)
-
-        # Step 1: Normalize
+def green2sRGB(img_demosaicked):
+    # Step 1: Normalize
         if img_demosaicked.dtype == np.uint8:
             img = img_demosaicked.astype(np.float32) / 255.0
         elif img_demosaicked.dtype == np.uint16:
@@ -84,18 +37,44 @@ def RGB2sRGB(frame, rgb_file, srgb_folder, hdr):
         img_srgb = gamma_encode_srgb(img_ccm)
         img_srgb = np.clip(img_srgb, 0, 1)
 
-        # Save
-        if hdr: # HDR. Save in 16bits
-            img_to_save = (img_srgb * 65535).astype(np.uint16)
-            img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(output_path, img_to_save)
-        else: # LDR. Save in 8bits
-            img_to_save = (img_srgb * 255).astype(np.uint8)
-            img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(output_path, img_to_save)
+        return img_srgb
 
 
-def testing_record(gt_lines, rgb_folder, srgb_folder, hdr):
+def process_RAW(frame, input_file, srgb_folder, raw_folder, green, width=1920, height=1080, bayer_pattern=cv2.COLOR_BAYER_GR2BGR):
+    "Convert .dng RAW to green RGB RAW"
+
+    # 1. Process .dng RAW image
+    raw_image = load_raw_image(input_file, width, height)
+    bgr_image = cv2.cvtColor(raw_image, bayer_pattern)
+
+    # 2. Demosaic RAW image
+    green_raw_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+
+    # If green, save green RAW image, if it doesn't already exist
+    if green:
+        output_raw_path = os.path.join(raw_folder, str(frame) + '.png')
+        if not os.path.isfile(output_raw_path): 
+            cv2.imwrite(output_raw_path, green_raw_image)
+
+    # 3. Convert green RAW image to sRGB RAW image
+    srgb_raw_image = green2sRGB(green_raw_image)
+
+    # If not green, save 16 bits sRGB RAW image, if it doesn't already exist
+    if not green:
+        output_raw_path = os.path.join(raw_folder, str(frame) + '.png')
+        if not os.path.isfile(output_raw_path): 
+            img_to_save = (srgb_raw_image * 65535).astype(np.uint16)
+            img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(output_raw_path, img_to_save)
+    
+    # Save 8 bits SRGB LDR image, if it doesn't already exist
+    output_ldr_path = os.path.join(srgb_folder, str(frame) + '.png')
+    if not os.path.isfile(output_ldr_path):
+        img_to_save = (srgb_raw_image * 255).astype(np.uint8)
+        img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_ldr_path, img_to_save)
+        
+def testing_record(gt_lines, raw_folder, srgb_folder):
     # First frame
     first_frame = gt_lines[0].strip().split()[0]
 
@@ -112,28 +91,27 @@ def testing_record(gt_lines, rgb_folder, srgb_folder, hdr):
 
     num_frames = int(parts[0]) - int(first_frame) + 1
 
-    # Test RGB images    
-    rgb_count = sum(1 for entry in os.listdir(rgb_folder))
+    # Test RAW images    
+    raw_count = sum(1 for entry in os.listdir(raw_folder))
 
-    rgb_sample = cv2.imread(
-        os.path.join(rgb_folder, os.listdir(rgb_folder)[0]), cv2.IMREAD_UNCHANGED
+    raw_sample = cv2.imread(
+        os.path.join(raw_folder, os.listdir(raw_folder)[0]), cv2.IMREAD_UNCHANGED
     )
-    rgb_bit_depth = rgb_sample.dtype.itemsize * 8
+    rgb_bit_depth = raw_sample.dtype.itemsize * 8
 
-    if rgb_count != num_frames:
+    if raw_count != num_frames:
         print(
-            f"❌ Error:  Some RGB images haven't been converted. RGB images:({rgb_count}) vs. RAW images: ({num_frames})"
+            f"❌ Error:  Some RAW images haven't been converted. RAW images:({raw_count}) vs. recorded images in gt.txt: ({num_frames})"
         )
         print("Missing RGB images:")
         for i in range(int(first_frame), int(parts[0])+1):
-            if not os.path.exists(os.path.join(rgb_folder, f"{i}.png")):
+            if not os.path.exists(os.path.join(raw_folder, f"{i}.png")):
                 print(f"{i}.png missing")
     else:
-        if hdr:
-            if rgb_bit_depth != 16:
-                print(f"❌ Error: RGB images bit depth ({rgb_bit_depth}) is not 16 bits.")
-            else:
-                print(f"✅ RGB images are correct and 16 bits.")
+        if rgb_bit_depth != 16:
+            print(f"❌ Error: RGB images bit depth ({rgb_bit_depth}) is not 16 bits.")
+        else:
+            print(f"✅ RGB images are correct and 16 bits.")
         
 
     # Test sRGB images
@@ -160,31 +138,35 @@ def testing_record(gt_lines, rgb_folder, srgb_folder, hdr):
 
 
 
-
-def main():     
+def main():  
+    # Select dataset   
     main_folder = r"/home/morozco/datasets/my_dataset/kitchen2"
-    hdr = True # or false if u want the raw in ldr rgb
+    green = False # True for green RAW, False for color sRGB RAW
 
+    # Create and load directories 
     raw_folder = os.path.join(main_folder, "raw")
+    print(raw_folder)
     srgb_folder = os.path.join(main_folder, "sRGB")
-    if hdr:
-        image_folder = os.path.join(main_folder, "raw_sRGB")
+    if green:
+        raw_folder = os.path.join(main_folder, "raw_green")
+        print("🟢 Green RAW")
     else:
-        image_folder = os.path.join(main_folder, "raw_green")
+        raw_folder = os.path.join(main_folder, "raw_sRGB")
+        print("🌈 Non green RAW")
     metadata_folder = os.path.join(main_folder, "metadata") # Not in use rightnow
-    print(image_folder)
-    os.makedirs(image_folder, exist_ok=True)
+    
+    os.makedirs(raw_folder, exist_ok=True)
     os.makedirs(srgb_folder, exist_ok=True)
     os.makedirs(metadata_folder, exist_ok=True)
 
     groundtruth = os.path.join(main_folder, "groundtruth.txt")
 
-    # Loop over groundtruth frames only
+    # Loop over groundtruth frames to extract images
     with open(groundtruth, "r") as f:
         gt_lines = f.readlines()
-    gt_lines = gt_lines[1:] #skip first line with title
+    gt_lines = gt_lines[1:] 
 
-    print("🔴 Extracting RGB and sRGB images")
+    print("🔴 Extracting RAW and LDR images")
     for line in tqdm(gt_lines):
         parts = line.strip().split()
         if len(parts) != 8:
@@ -192,13 +174,12 @@ def main():
         frame = int(parts[0])
 
         raw_file = os.path.join(raw_folder, str(frame) + '.dng')
-        rgb_file = RAW2RGB(frame, raw_file, image_folder)
-        # RAW2sRGB(frame, raw_file, srgb_folder) # RealSense approach
-        RGB2sRGB(frame, rgb_file, srgb_folder, hdr)
+
+        process_RAW(frame, raw_file, srgb_folder, raw_folder, green)
 
     
     print("🔎 Inspecting files")
-    testing_record(gt_lines, image_folder, srgb_folder, hdr)
+    testing_record(gt_lines, raw_folder, srgb_folder) 
 
 
     
