@@ -31,7 +31,7 @@ def RAW2RGB(
 
 def RAW2sRGB(frame, input_file, sRGB_folder):
     """
-    sRGB processing from RealSensethat I cant use later
+    RealSense sRGB processing from that I am not using, because if I can't use it to go from rendered green -> sRGB.
     Process .dng files and converts them into sRGB in the way realsense makes it!.
     """
     with rawpy.imread(input_file) as raw:
@@ -53,7 +53,7 @@ def gamma_encode_srgb(x):
     a = 0.055
     return np.where(x <= 0.0031308, 12.92 * x, (1 + a) * x ** (1 / 2.4) - a)
 
-def RGB2sRGB(frame, rgb_file, srgb_folder):    
+def RGB2sRGB(frame, rgb_file, srgb_folder, hdr):    
     output_path = srgb_folder + '/' + str(frame) + '.png'
     if not os.path.isfile(output_path):
         img_demosaicked = cv2.imread(rgb_file, cv2.IMREAD_UNCHANGED) 
@@ -67,7 +67,7 @@ def RGB2sRGB(frame, rgb_file, srgb_folder):
 
         # Step 2: Apply white balance (generic daylight)
         wb = np.array([2.0, 1.0, 1.5])
-        img_wb = img * wb  # broadcast over channels
+        img_wb = img * wb  
 
         # Step 3: Color correction matrix (generic)
         ccm = np.array([
@@ -85,12 +85,17 @@ def RGB2sRGB(frame, rgb_file, srgb_folder):
         img_srgb = np.clip(img_srgb, 0, 1)
 
         # Save
-        img_to_save = (img_srgb * 255).astype(np.uint8)
-        img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(output_path, img_to_save)
+        if hdr: # HDR. Save in 16bits
+            img_to_save = (img_srgb * 65535).astype(np.uint16)
+            img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(output_path, img_to_save)
+        else: # LDR. Save in 8bits
+            img_to_save = (img_srgb * 255).astype(np.uint8)
+            img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(output_path, img_to_save)
 
 
-def testing_record(gt_lines, rgb_folder, srgb_folder):
+def testing_record(gt_lines, rgb_folder, srgb_folder, hdr):
     # First frame
     first_frame = gt_lines[0].strip().split()[0]
 
@@ -124,10 +129,12 @@ def testing_record(gt_lines, rgb_folder, srgb_folder):
             if not os.path.exists(os.path.join(rgb_folder, f"{i}.png")):
                 print(f"{i}.png missing")
     else:
-        if rgb_bit_depth != 16:
-            print(f"❌ Error: RGB images bit depth ({rgb_bit_depth}) is not 16 bits.")
-        else:
-            print(f"✅ RGB images are correct and 16 bits.")
+        if hdr:
+            if rgb_bit_depth != 16:
+                print(f"❌ Error: RGB images bit depth ({rgb_bit_depth}) is not 16 bits.")
+            else:
+                print(f"✅ RGB images are correct and 16 bits.")
+        
 
     # Test sRGB images
     srgb_count = sum(1 for entry in os.listdir(srgb_folder))
@@ -156,11 +163,15 @@ def testing_record(gt_lines, rgb_folder, srgb_folder):
 
 def main():     
     main_folder = r"/home/morozco/datasets/my_dataset/kitchen2"
+    hdr = True # or false if u want the raw in ldr rgb
 
     raw_folder = os.path.join(main_folder, "raw")
-    image_folder = os.path.join(main_folder, "rgb")
     srgb_folder = os.path.join(main_folder, "sRGB")
-    metadata_folder = os.path.join(main_folder, "metadata")
+    if hdr:
+        image_folder = os.path.join(main_folder, "raw_sRGB")
+    else:
+        image_folder = os.path.join(main_folder, "raw_green")
+    metadata_folder = os.path.join(main_folder, "metadata") # Not in use rightnow
     print(image_folder)
     os.makedirs(image_folder, exist_ok=True)
     os.makedirs(srgb_folder, exist_ok=True)
@@ -182,12 +193,12 @@ def main():
 
         raw_file = os.path.join(raw_folder, str(frame) + '.dng')
         rgb_file = RAW2RGB(frame, raw_file, image_folder)
-        # RAW2sRGB(frame, raw_file, srgb_folder) #RealSense
-        RGB2sRGB(frame, rgb_file, srgb_folder)
+        # RAW2sRGB(frame, raw_file, srgb_folder) # RealSense approach
+        RGB2sRGB(frame, rgb_file, srgb_folder, hdr)
 
     
     print("🔎 Inspecting files")
-    testing_record(gt_lines, image_folder, srgb_folder)
+    testing_record(gt_lines, image_folder, srgb_folder, hdr)
 
 
     
