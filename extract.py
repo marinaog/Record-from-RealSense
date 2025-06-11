@@ -12,32 +12,33 @@ def gamma_encode_srgb(x):
     return np.where(x <= 0.0031308, 12.92 * x, (1 + a) * x ** (1 / 2.4) - a)
 
 def green2sRGB(img_demosaicked):
+    img_demosaicked = cv2.cvtColor(img_demosaicked, cv2.COLOR_BGR2RGB)
     # Step 1: Normalize
-        if img_demosaicked.dtype == np.uint8:
-            img = img_demosaicked.astype(np.float32) / 255.0
-        elif img_demosaicked.dtype == np.uint16:
-            img = img_demosaicked.astype(np.float32) / 65535.0
+    if img_demosaicked.dtype == np.uint8:
+        img = img_demosaicked.astype(np.float32) / 255.0
+    elif img_demosaicked.dtype == np.uint16:
+        img = img_demosaicked.astype(np.float32) / 65535.0
 
-        # Step 2: Apply white balance (generic daylight)
-        wb = np.array([2.0, 1.0, 1.5])
-        img_wb = img * wb  
+    # Step 2: Apply white balance (generic daylight)
+    wb = np.array([2.0, 1.0, 1.5])
+    img_wb = img * wb  
 
-        # Step 3: Color correction matrix (generic)
-        ccm = np.array([
-            [1.8, -0.6, -0.2],
-            [-0.3, 1.3, 0.0],
-            [0.0, -0.6, 1.6]
-        ])
-        img_ccm = np.tensordot(img_wb, ccm.T, axes=1)
+    # Step 3: Color correction matrix (generic)
+    ccm = np.array([
+        [1.8, -0.6, -0.2],
+        [-0.3, 1.3, 0.0],
+        [0.0, -0.6, 1.6]
+    ])
+    img_ccm = np.tensordot(img_wb, ccm.T, axes=1)
 
-        # Step 4: Clip
-        img_ccm = np.clip(img_ccm, 0, 1)
+    # Step 4: Clip
+    img_ccm = np.clip(img_ccm, 0, 1)
 
-        # Step 5: Gamma encode (sRGB)
-        img_srgb = gamma_encode_srgb(img_ccm)
-        img_srgb = np.clip(img_srgb, 0, 1)
+    # Step 5: Gamma encode (sRGB)
+    img_srgb = gamma_encode_srgb(img_ccm)
+    img_srgb = np.clip(img_srgb, 0, 1)
 
-        return img_srgb
+    return img_srgb
 
 
 def process_RAW(frame, input_file, srgb_folder, raw_folder, green, width=1920, height=1080, bayer_pattern=cv2.COLOR_BAYER_GR2BGR):
@@ -69,10 +70,10 @@ def process_RAW(frame, input_file, srgb_folder, raw_folder, green, width=1920, h
     
     # Save 8 bits SRGB LDR image, if it doesn't already exist
     output_ldr_path = os.path.join(srgb_folder, str(frame) + '.png')
-    if not os.path.isfile(output_ldr_path):
-        img_to_save = (srgb_raw_image * 255).astype(np.uint8)
-        img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(output_ldr_path, img_to_save)
+    # if not os.path.isfile(output_ldr_path):
+    img_to_save = (srgb_raw_image * 255).astype(np.uint8)
+    img_to_save = cv2.cvtColor(img_to_save, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(output_ldr_path, img_to_save)
         
 def testing_record(gt_lines, raw_folder, srgb_folder):
     # First frame
@@ -144,8 +145,9 @@ def main():
     green = False # True for green RAW, False for color sRGB RAW
 
     # Create and load directories 
-    raw_folder = os.path.join(main_folder, "raw")
-    print(raw_folder)
+    dng_folder = os.path.join(main_folder, "raw")
+    print(dng_folder)
+    
     srgb_folder = os.path.join(main_folder, "sRGB")
     if green:
         raw_folder = os.path.join(main_folder, "raw_green")
@@ -173,7 +175,7 @@ def main():
             continue # Skip empty row (last ones)
         frame = int(parts[0])
 
-        raw_file = os.path.join(raw_folder, str(frame) + '.dng')
+        raw_file = os.path.join(dng_folder, str(frame) + '.dng')
 
         process_RAW(frame, raw_file, srgb_folder, raw_folder, green)
 
